@@ -1,0 +1,9 @@
+{
+  "/api/decisions/route": "/api/decisions",
+  "/api/reputation/route": "/api/reputation",
+  "/api/oracle/route": "/api/oracle",
+  "/api/trigger/route": "/api/trigger",
+  "/api/vault/route": "/api/vault",
+  "/_not-found/page": "/_not-found",
+  "/page": "/"
+}
