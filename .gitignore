@@ -1,0 +1,8 @@
+node_modules/
+target/
+.env
+.env.local
+dist/
+*.log
+.DS_Store
+wasm/
