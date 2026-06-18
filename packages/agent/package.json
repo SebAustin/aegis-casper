@@ -1,0 +1,33 @@
+{
+  "name": "@aegis/agent",
+  "version": "0.1.0",
+  "description": "Autonomous perceive→decide→act agent loop for Aegis",
+  "type": "module",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "start": "node dist/run.js",
+    "test": "vitest run",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@aegis/shared": "workspace:*",
+    "@anthropic-ai/sdk": "^0.52.0",
+    "casper-js-sdk": "^5.0.12",
+    "openai": "^4.98.0",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/uuid": "^10.0.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,9 @@
+# Odra 2.8.1's proc-macro crate (odra-macros) uses the unstable `box_patterns`
+# feature, so the contracts must be built with a nightly toolchain. This pin keeps
+# `cargo test` (OdraVM in-memory backend) and `cargo odra build` (wasm32) on a
+# single, reproducible nightly that ships the wasm32 target and the LLVM 20
+# bulk-memory codegen Odra's wasm strip step expects.
+[toolchain]
+channel = "nightly-2026-01-01"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

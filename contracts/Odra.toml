@@ -1,0 +1,5 @@
+[[contracts]]
+fqn = "aegis_contracts::vault::Vault"
+
+[[contracts]]
+fqn = "aegis_contracts::registry::Registry"

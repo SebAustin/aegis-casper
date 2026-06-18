@@ -1,0 +1,27 @@
+{
+  "name": "aegis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aegis — Autonomous RWA Yield-Routing Agent on Casper (Buildathon 2026)",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/*\" build",
+    "test": "pnpm -r --filter \"./packages/*\" test",
+    "lint": "pnpm -r --filter \"./packages/*\" lint",
+    "typecheck": "pnpm -r --filter \"./packages/*\" typecheck",
+    "oracle": "pnpm --filter @aegis/oracle start",
+    "agent": "pnpm --filter @aegis/agent start",
+    "mcp": "pnpm --filter @aegis/mcp-server start",
+    "dev": "pnpm --filter @aegis/dashboard dev",
+    "contracts:test": "cd contracts && cargo test",
+    "deploy:testnet": "node scripts/deploy-testnet.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8",
+    "@types/node": "^22.10.2"
+  }
+}

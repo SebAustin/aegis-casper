@@ -36,7 +36,13 @@ Living log of decisions made under autonomy. Each entry: what was assumed, why, 
 
 ## A-003 — Odra version
 
-**Assumed:** Odra 2.x (latest stable, June 2026) is used. Contracts compile to Wasm and target Casper testnet. CEP-18 module is used for vault share tokens. The concrete pin placeholder is `odra = "2.1.0"` in `contracts/Cargo.toml`; this exact semver MUST be confirmed against the buildathon scaffold before M1 (OQ-02 resolution gate). All CI runs on the Odra in-memory backend, so an incorrect pin is caught at M1 build time, not at testnet.
+**Assumed:** Odra 2.x (latest stable, June 2026) is used. Contracts compile to Wasm and target Casper testnet. CEP-18 module is used for vault share tokens. All CI runs on the Odra in-memory backend, so an incorrect pin is caught at M1 build time, not at testnet.
+
+**RESOLVED at M1 (2026-06-18, OQ-02):** The placeholder `2.1.0` was a guess. The actual current stable Odra 2.x on crates.io is **`2.8.1`** — that is the version that resolves and compiles, and it is the pin now in `contracts/aegis-contracts/Cargo.toml` (`odra`, `odra-modules`, `odra-test`, `odra-build` all at `2.8.1`). The vault uses `odra_modules::cep18_token::Cep18` as a `SubModule` for the `AEGIS` share token (`raw_mint`/`raw_burn`/`balance_of`/`total_supply`). The full unit suite (26 tests) passes on the OdraVM in-memory backend, and both contracts compile to `wasm32-unknown-unknown`.
+
+**Toolchain note:** `odra-macros 2.8.1` uses the unstable `box_patterns` feature, so the contracts require a **nightly** Rust toolchain. `contracts/rust-toolchain.toml` pins `nightly-2026-01-01` (ships the `wasm32-unknown-unknown` target and the LLVM-20 bulk-memory codegen Odra's wasm strip step relies on). `cargo odra build` additionally needs `wasm-opt` (binaryen) and `wasm-strip` (WABT) on PATH for the optimize/strip step.
+
+**Address vs AccountHash:** Odra's schema layer supports `Address` but not a bare `AccountHash` in entry-point args / return types / events / storage keys. The public interface therefore uses Odra's `Address` (`Address::Account(AccountHash)` carries exactly the account hash) wherever the requirements said `AccountHash`. This is the idiomatic Odra equivalent and what casper-js-sdk / CSPR.cloud clients pass; the entry-point signatures are otherwise unchanged.
 
 **Why:** Odra 2.x is the current stable release with testnet deploy tooling. It includes CEP-18, access control, and re-entrancy guard modules out of the box.
 
