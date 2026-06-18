@@ -14,19 +14,19 @@
       "static/chunks/main-app-1e766a7726426f74.js",
       "static/chunks/app/api/decisions/route-7498e49562d9c5b9.js"
     ],
-    "/api/reputation/route": [
-      "static/chunks/webpack-93f4cd70024a189e.js",
-      "static/chunks/f5184d75-27b7240eb4153f0c.js",
-      "static/chunks/285-933c438dfbb98efd.js",
-      "static/chunks/main-app-1e766a7726426f74.js",
-      "static/chunks/app/api/reputation/route-7498e49562d9c5b9.js"
-    ],
     "/api/oracle/route": [
       "static/chunks/webpack-93f4cd70024a189e.js",
       "static/chunks/f5184d75-27b7240eb4153f0c.js",
       "static/chunks/285-933c438dfbb98efd.js",
       "static/chunks/main-app-1e766a7726426f74.js",
       "static/chunks/app/api/oracle/route-7498e49562d9c5b9.js"
+    ],
+    "/api/reputation/route": [
+      "static/chunks/webpack-93f4cd70024a189e.js",
+      "static/chunks/f5184d75-27b7240eb4153f0c.js",
+      "static/chunks/285-933c438dfbb98efd.js",
+      "static/chunks/main-app-1e766a7726426f74.js",
+      "static/chunks/app/api/reputation/route-7498e49562d9c5b9.js"
     ],
     "/api/trigger/route": [
       "static/chunks/webpack-93f4cd70024a189e.js",

@@ -8,7 +8,11 @@ import { fileURLToPath } from "node:url";
 import { loadEnv } from "@aegis/shared";
 import { AgentLoop } from "./loop.js";
 import { CasperReadClient } from "./clients/casper-read-client.js";
-import { OracleClient, mockSign } from "./clients/oracle-client.js";
+import {
+  OracleClient,
+  mockSign,
+  buildRealSigner,
+} from "./clients/oracle-client.js";
 import { CasperTxClient } from "./clients/casper-tx-client.js";
 import { createLlmClient } from "./clients/llm-client.js";
 
@@ -25,18 +29,52 @@ const casperRead = new CasperReadClient(
   env.REGISTRY_CONTRACT_HASH
 );
 
+// ── Signer resolution ─────────────────────────────────────────────────────────
+// When AGENT_PRIVATE_KEY_HEX is set, sign x402 payloads with the real ed25519
+// key via casper-js-sdk. Without a key (testnet demo / CI), fall back to the
+// constant mock signature and log a clear warning.
+
+let oracleSign: (data: Buffer) => string;
+
+if (env.AGENT_PRIVATE_KEY_HEX) {
+  try {
+    oracleSign = await buildRealSigner(env.AGENT_PRIVATE_KEY_HEX);
+    process.stdout.write(
+      JSON.stringify({
+        level: "info",
+        service: "agent",
+        msg: "x402 signer: using real ed25519 key from AGENT_PRIVATE_KEY_HEX",
+      }) + "\n"
+    );
+  } catch (err) {
+    // SDK import failure or malformed key — log and fall back to mock sign so
+    // the agent can still start in degraded mode rather than crashing.
+    process.stdout.write(
+      JSON.stringify({
+        level: "warn",
+        service: "agent",
+        msg: "x402 signer: failed to build real signer, falling back to mockSign — payment gating is NOT enforced",
+        reason: err instanceof Error ? err.message : String(err),
+      }) + "\n"
+    );
+    oracleSign = mockSign;
+  }
+} else {
+  process.stdout.write(
+    JSON.stringify({
+      level: "warn",
+      service: "agent",
+      msg: "x402 signer: AGENT_PRIVATE_KEY_HEX not set — using mockSign, payment gating is NOT enforced (testnet demo mode)",
+    }) + "\n"
+  );
+  oracleSign = mockSign;
+}
+
 const oracle = new OracleClient({
   oracleUrl: env.ORACLE_URL,
   oraclePriceMotes: env.ORACLE_PRICE_MOTES,
   agentAccountHash: env.AGENT_ACCOUNT_HASH,
-  // Use real signing when private key is provided
-  sign: env.AGENT_PRIVATE_KEY_HEX
-    ? (data) => {
-        // Placeholder: in production, use casper-js-sdk to sign
-        // Returns mockSign until SDK is integrated
-        return mockSign(data);
-      }
-    : mockSign,
+  sign: oracleSign,
 });
 
 const tx = new CasperTxClient({

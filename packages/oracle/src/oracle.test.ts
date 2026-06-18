@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { MockFacilitator } from "./facilitator.js";
+import type { MockFacilitatorConfig } from "./facilitator.js";
 import { v4 as uuidv4 } from "uuid";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -11,7 +12,9 @@ function makePayload(overrides: Record<string, unknown> = {}): string {
     network: "casper-testnet",
     amountMotes: "1000000",
     asset: "CSPR",
-    recipient: "oracle-payee-hash",
+    // Must match the ORACLE_PAYEE_ACCOUNT_HASH env var set below so that
+    // MockFacilitator's recipient check passes.
+    recipient: "test-payee-hash",
     payer: "agent-account-hash",
     nonce: uuidv4(),
     expiryUnix: now + 300,
@@ -88,6 +91,73 @@ describe("MockFacilitator", () => {
     const payload = makePayload({ expiryUnix: NOW + 1 });
     const receipt = await facilitator.verify(payload, NOW);
     expect(receipt.expiry).toBe(NOW + 1);
+  });
+});
+
+// ── SEC-03 gating tests ───────────────────────────────────────────────────────
+//
+// Validates the recipient-match and amount-floor checks added to close the
+// "anyone can forge an accepted payment without matching recipient/amount" gap
+// identified in SEC-03 of SECURITY.md.
+
+const SEC03_CONFIG: MockFacilitatorConfig = {
+  expectedRecipient: "oracle-payee-hash",
+  minAmountMotes: BigInt(1_000_000),
+};
+
+function makeSec03Payload(overrides: Record<string, unknown> = {}): string {
+  const now = Math.floor(Date.now() / 1000);
+  const obj = {
+    scheme: "x402-casper",
+    network: "casper-testnet",
+    amountMotes: "1000000",
+    asset: "CSPR",
+    recipient: "oracle-payee-hash",
+    payer: "agent-account-hash",
+    nonce: uuidv4(),
+    expiryUnix: now + 300,
+    signature: "deadbeef01234567",
+    ...overrides,
+  };
+  return Buffer.from(JSON.stringify(obj)).toString("base64");
+}
+
+describe("MockFacilitator — SEC-03 recipient and amount gating", () => {
+  const NOW = Math.floor(Date.now() / 1000);
+
+  it("accepts a payload with correct recipient and sufficient amount", async () => {
+    const f = new MockFacilitator(SEC03_CONFIG);
+    const payload = makeSec03Payload();
+    const receipt = await f.verify(payload, NOW);
+    expect(receipt.facilitator).toBe("mock");
+    expect(receipt.amountMotes).toBe(BigInt(1_000_000));
+  });
+
+  it("rejects a payload whose recipient does not match the expected payee (SEC-03)", async () => {
+    const f = new MockFacilitator(SEC03_CONFIG);
+    const payload = makeSec03Payload({ recipient: "wrong-recipient-hash" });
+    await expect(f.verify(payload, NOW)).rejects.toThrow(/recipient mismatch/);
+  });
+
+  it("rejects a payload whose amountMotes is below the minimum price (SEC-03)", async () => {
+    const f = new MockFacilitator(SEC03_CONFIG);
+    // Send 1 mote less than the required minimum
+    const payload = makeSec03Payload({ amountMotes: "999999" });
+    await expect(f.verify(payload, NOW)).rejects.toThrow(/amount too low/);
+  });
+
+  it("accepts a payload whose amountMotes exactly equals the minimum price", async () => {
+    const f = new MockFacilitator(SEC03_CONFIG);
+    const payload = makeSec03Payload({ amountMotes: "1000000" });
+    const receipt = await f.verify(payload, NOW);
+    expect(receipt.amountMotes).toBe(BigInt(1_000_000));
+  });
+
+  it("accepts a payload whose amountMotes exceeds the minimum price", async () => {
+    const f = new MockFacilitator(SEC03_CONFIG);
+    const payload = makeSec03Payload({ amountMotes: "5000000" });
+    const receipt = await f.verify(payload, NOW);
+    expect(receipt.amountMotes).toBe(BigInt(5_000_000));
   });
 });
 

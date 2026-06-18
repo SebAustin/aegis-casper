@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  # ── TypeScript monorepo ────────────────────────────────────────────────────
+  ts:
+    name: TypeScript (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: ["22"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "9.15.9"
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm -r typecheck
+
+      - name: Lint
+        # Treat ESLint warnings as acceptable; only errors fail the step.
+        # The exit code from eslint is 1 for lint errors, 0 for warnings-only.
+        run: pnpm -r lint
+
+      - name: Test
+        run: pnpm -r test
+
+      - name: Build
+        run: pnpm -r build
+
+      - name: Security audit (npm audit / pip-audit equivalent)
+        # pnpm audit exits non-zero on high/critical severity advisories.
+        # --audit-level=high skips low/moderate to keep CI stable on testnet deps.
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+        # continue-on-error: security findings are reported but do not block CI
+        # while the project is in active development. Remove this flag before
+        # production deployment.
+
+  # ── Rust contracts ─────────────────────────────────────────────────────────
+  rust:
+    name: Rust contracts
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read toolchain channel
+        id: toolchain
+        run: |
+          CHANNEL=$(grep '^channel' contracts/rust-toolchain.toml | sed 's/.*= *"//' | tr -d '"')
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+
+      - name: Install Rust nightly toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ steps.toolchain.outputs.channel }}
+          components: rustfmt,clippy
+          targets: wasm32-unknown-unknown
+
+      - name: Cache Cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            contracts/target
+          key: ${{ runner.os }}-cargo-${{ steps.toolchain.outputs.channel }}-${{ hashFiles('contracts/**/Cargo.lock', 'contracts/**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ steps.toolchain.outputs.channel }}-
+
+      - name: Run contract unit tests
+        working-directory: contracts
+        run: cargo test
+
+      - name: Check formatting
+        working-directory: contracts
+        run: cargo fmt --check
+
+      - name: Clippy (deny warnings)
+        working-directory: contracts
+        run: cargo clippy -- -D warnings
+        continue-on-error: true
+        # Odra-generated code may trigger clippy lints outside our control;
+        # treat as advisory until upstreamed. Remove continue-on-error when clean.
+
+      - name: Security audit (cargo audit)
+        working-directory: contracts
+        run: |
+          cargo install cargo-audit --quiet 2>/dev/null || true
+          cargo audit
+        continue-on-error: true
+        # Advisory — cargo-audit install takes time in CI; keep non-blocking.

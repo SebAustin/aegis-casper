@@ -27,9 +27,6 @@ import {
 import type {
   DecisionLogEntry,
   LlmClient,
-  AllocationMap,
-  RwaOracleData,
-  PaymentReceipt,
 } from "@aegis/shared";
 import type { CasperReadClient } from "./clients/casper-read-client.js";
 import type { OracleClient } from "./clients/oracle-client.js";

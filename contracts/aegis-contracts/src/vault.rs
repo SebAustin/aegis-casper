@@ -17,9 +17,21 @@
 //!   allowed to `reallocate` (NFR-S-02 / FR-V-03).
 //!
 //! Share math (RISK-09): the first deposit into an empty vault mints shares 1:1
-//! with motes; every subsequent deposit mints `deposit * total_shares /
-//! total_balance`. Withdrawals pay out `shares * total_balance / total_shares`.
+//! with motes, minus a fixed [`MINIMUM_LIQUIDITY`] of *dead* shares that are
+//! permanently locked to a burn address (SEC-02 — first-depositor inflation
+//! mitigation, the ERC-4626 / Uniswap-V2 minimum-liquidity lock). Every
+//! subsequent deposit mints `deposit * total_shares / total_balance`.
+//! Withdrawals pay out `shares * total_balance / total_shares`.
+//!
+//! Fund custody (SEC-01): CSPR is held in the contract's own main purse. Odra's
+//! `#[odra(payable)]` machinery moves the call's `attached_value()` into that
+//! purse *before* the function body runs, so `self.env().self_balance()` is the
+//! single authoritative balance. The previous `Var<U512>` mirror has been
+//! removed — `get_state().total_balance_motes` is now derived live from the
+//! purse balance, eliminating any mirror/purse divergence. `withdraw` transfers
+//! from the purse and asserts the purse holds at least the payout amount.
 
+use odra::casper_types::account::AccountHash;
 use odra::casper_types::{U256, U512};
 use odra::prelude::*;
 use odra::uints::{ToU256, ToU512};
@@ -27,6 +39,13 @@ use odra_modules::cep18_token::Cep18;
 
 /// Total basis points representing 100% of an allocation.
 const TOTAL_BPS: u32 = 10_000;
+
+/// Dead shares minted to the burn address on the very first deposit to defuse
+/// first-depositor share-price inflation (SEC-02). These shares are never
+/// redeemable, so an attacker cannot drive the share price to a point where a
+/// later small depositor rounds to zero shares. 1_000 matches the canonical
+/// Uniswap-V2 / OpenZeppelin ERC-4626 minimum-liquidity constant.
+const MINIMUM_LIQUIDITY: u64 = 1_000;
 
 /// Errors returned by the vault contract. Discriminants are namespaced away from
 /// the CEP-18 module errors (60001..) to keep revert reasons unambiguous.
@@ -50,6 +69,12 @@ pub enum VaultError {
     /// Internal share-math invariant broken (e.g. total shares is zero while a
     /// balance exists). Should be unreachable.
     MathError = 10_008,
+    /// The contract purse holds less than the requested payout (SEC-01). Should
+    /// be unreachable while share math is purse-authoritative.
+    InsufficientBalance = 10_009,
+    /// The first deposit did not exceed the locked minimum liquidity, so it
+    /// would mint zero user shares (SEC-02).
+    DepositBelowMinimum = 10_010,
 }
 
 /// Read-only snapshot of the vault returned by [`Vault::get_state`] (FR-V-06).
@@ -118,10 +143,6 @@ pub struct Reallocated {
 pub struct Vault {
     /// `AEGIS` CEP-18 share token (mint on deposit, burn on withdraw).
     shares: SubModule<Cep18>,
-    /// Mirror of the vault's CSPR balance used for share math. The contract purse
-    /// balance is the ultimate truth on-chain; this mirror keeps the math cheap
-    /// and is updated in lock-step with every deposit/withdraw.
-    total_balance_motes: Var<U512>,
     /// The single account address permitted to call `reallocate`.
     agent: Var<Address>,
     /// Admin address; may pause/unpause and rotate the agent.
@@ -146,7 +167,6 @@ impl Vault {
         self.owner.set(owner);
         self.agent.set(owner);
         self.paused.set(false);
-        self.total_balance_motes.set(U512::zero());
         self.last_reallocation_ts.set(0);
         self.allocation.set(Vec::new());
         self.shares.init(
@@ -159,8 +179,16 @@ impl Vault {
 
     /// Deposits CSPR and mints proportional `AEGIS` shares to the caller (FR-V-01).
     ///
-    /// First deposit into an empty vault mints shares 1:1 with motes; subsequent
-    /// deposits mint `deposit * total_shares / total_balance` (RISK-09).
+    /// SEC-01: the attached CSPR is already inside the contract's main purse by
+    /// the time this body runs (Odra's payable prelude moves it there), so the
+    /// balance *before* this deposit is `self_balance() - amount`. Share math is
+    /// based on that real purse balance, not a mirror.
+    ///
+    /// SEC-02: the first deposit into an empty vault mints shares 1:1 with motes
+    /// but permanently locks [`MINIMUM_LIQUIDITY`] dead shares to the burn
+    /// address, so the share price cannot be inflated to round later depositors
+    /// to zero. Subsequent deposits mint `deposit * total_shares / total_balance`
+    /// (RISK-09).
     #[odra(payable)]
     pub fn deposit(&mut self) {
         self.assert_not_paused();
@@ -171,19 +199,36 @@ impl Vault {
             self.env().revert(VaultError::ZeroDeposit);
         }
 
-        let total_balance = self.total_balance_motes.get_or_default();
+        // Authoritative balance from the contract purse. `self_balance()` already
+        // includes the just-attached `amount`, so the pre-deposit balance is the
+        // difference. `checked_sub` guards the (unreachable) underflow case.
+        let total_balance_after = self.env().self_balance();
+        let total_balance = total_balance_after
+            .checked_sub(amount)
+            .unwrap_or_revert_with(self, VaultError::MathError);
         let total_shares = self.shares.total_supply();
 
-        // Compute shares to mint. First deposit (no shares yet) is 1:1.
+        let amount_u256 = amount
+            .to_u256()
+            .unwrap_or_revert_with(self, VaultError::MathError);
+
+        // Compute shares to mint.
         let shares_out: U256 = if total_shares.is_zero() || total_balance.is_zero() {
-            amount
-                .to_u256()
-                .unwrap_or_revert_with(self, VaultError::MathError)
+            // First deposit: mint 1:1, then lock MINIMUM_LIQUIDITY dead shares to
+            // the burn address (SEC-02). The first depositor must contribute at
+            // least the minimum liquidity.
+            let minimum = U256::from(MINIMUM_LIQUIDITY);
+            let user_shares = amount_u256
+                .checked_sub(minimum)
+                .unwrap_or_revert_with(self, VaultError::DepositBelowMinimum);
+            if user_shares.is_zero() {
+                self.env().revert(VaultError::DepositBelowMinimum);
+            }
+            // Effect: permanently lock the dead shares before minting to the user.
+            self.shares.raw_mint(&Self::burn_address(), &minimum);
+            user_shares
         } else {
             // shares_out = amount * total_shares / total_balance
-            let amount_u256 = amount
-                .to_u256()
-                .unwrap_or_revert_with(self, VaultError::MathError);
             let total_balance_u256 = total_balance
                 .to_u256()
                 .unwrap_or_revert_with(self, VaultError::MathError);
@@ -198,8 +243,8 @@ impl Vault {
             self.env().revert(VaultError::ZeroDeposit);
         }
 
-        // Effects before any further interaction.
-        self.total_balance_motes.set(total_balance + amount);
+        // Effect: mint the caller's shares. Custody is already handled by the
+        // purse; there is no mirror to update.
         self.shares.raw_mint(&caller, &shares_out);
 
         self.env().emit_event(Deposited {
@@ -232,7 +277,8 @@ impl Vault {
             self.env().revert(VaultError::InsufficientShares);
         }
 
-        let total_balance = self.total_balance_motes.get_or_default();
+        // Authoritative balance from the contract purse (SEC-01).
+        let total_balance = self.env().self_balance();
         // motes_out = shares * total_balance / total_shares
         let total_balance_u256 = total_balance
             .to_u256()
@@ -243,11 +289,19 @@ impl Vault {
             .unwrap_or_revert_with(self, VaultError::MathError);
         let motes_out = motes_out_u256.to_u512();
 
-        // Effects: burn shares and decrement the balance mirror first.
-        self.shares.raw_burn(&caller, &shares);
-        self.total_balance_motes.set(total_balance - motes_out);
+        // Defence in depth: never transfer more than the purse actually holds.
+        // With purse-authoritative math this cannot be exceeded, but asserting
+        // here guarantees no transfer-then-mismatch (SEC-01).
+        if motes_out > total_balance {
+            self.env().revert(VaultError::InsufficientBalance);
+        }
 
-        // Interaction: single outbound transfer of the caller's own funds.
+        // Effect: burn the caller's shares before the single outbound transfer
+        // (checks-effects-interactions / re-entrancy guard).
+        self.shares.raw_burn(&caller, &shares);
+
+        // Interaction: single outbound transfer of the caller's own funds from
+        // the contract purse.
         if !motes_out.is_zero() {
             self.env().transfer_tokens(&caller, &motes_out);
         }
@@ -283,7 +337,7 @@ impl Vault {
             agent: self.agent.get().unwrap_or_revert(self),
             old_allocation,
             new_allocation: allocation,
-            total_balance_motes: self.total_balance_motes.get_or_default(),
+            total_balance_motes: self.env().self_balance(),
             timestamp: now,
         });
     }
@@ -310,7 +364,7 @@ impl Vault {
     /// Returns a read-only snapshot of the vault (FR-V-06). Callable by anyone.
     pub fn get_state(&self) -> VaultState {
         VaultState {
-            total_balance_motes: self.total_balance_motes.get_or_default(),
+            total_balance_motes: self.env().self_balance(),
             total_shares: self.shares.total_supply(),
             allocation: self.allocation.get_or_default(),
             agent: self.agent.get().unwrap_or_revert(self),
@@ -327,6 +381,11 @@ impl Vault {
     /// Total `AEGIS` shares outstanding (convenience reader).
     pub fn total_shares(&self) -> U256 {
         self.shares.total_supply()
+    }
+
+    /// Locked dead shares held by the burn address (SEC-02 reader for tests).
+    pub fn dead_shares(&self) -> U256 {
+        self.shares.balance_of(&Self::burn_address())
     }
 }
 
@@ -349,6 +408,13 @@ impl Vault {
         if self.env().caller() != agent {
             self.env().revert(VaultError::NotAgent);
         }
+    }
+
+    /// The unspendable burn address that holds the locked minimum-liquidity
+    /// dead shares (SEC-02). The all-zero account hash has no known private key,
+    /// so the dead shares can never be redeemed.
+    fn burn_address() -> Address {
+        Address::Account(AccountHash::new([0u8; 32]))
     }
 }
 
@@ -390,15 +456,21 @@ mod tests {
     }
 
     #[test]
-    fn first_deposit_mints_one_to_one() {
+    fn first_deposit_mints_one_to_one_minus_dead_shares() {
         let (env, vault) = setup();
         let owner = env.get_account(0);
 
         vault.with_tokens(U512::from(100 * CSPR)).deposit();
 
+        // SEC-02: MINIMUM_LIQUIDITY dead shares are locked to the burn address;
+        // the depositor receives the remainder. Total supply is the full amount.
+        let dead = U256::from(MINIMUM_LIQUIDITY);
+        let user_shares = U256::from(100 * CSPR) - dead;
         assert_eq!(vault.total_shares(), U256::from(100 * CSPR));
-        assert_eq!(vault.shares_of(&owner), U256::from(100 * CSPR));
+        assert_eq!(vault.shares_of(&owner), user_shares);
+        assert_eq!(vault.dead_shares(), dead);
         let state = vault.get_state();
+        // SEC-01: balance is read from the contract purse, not a mirror.
         assert_eq!(state.total_balance_motes, U512::from(100 * CSPR));
     }
 
@@ -408,10 +480,12 @@ mod tests {
         let alice = env.get_account(1);
         let bob = env.get_account(2);
 
-        // Alice deposits 100 CSPR -> 100 CSPR shares (1:1 first deposit).
+        // Alice deposits 100 CSPR. First deposit locks MINIMUM_LIQUIDITY dead
+        // shares; total supply is the full 100 CSPR worth.
         env.set_caller(alice);
         vault.with_tokens(U512::from(100 * CSPR)).deposit();
-        assert_eq!(vault.shares_of(&alice), U256::from(100 * CSPR));
+        let dead = U256::from(MINIMUM_LIQUIDITY);
+        assert_eq!(vault.shares_of(&alice), U256::from(100 * CSPR) - dead);
 
         // Bob deposits 50 CSPR. shares = 50 * 100 / 100 = 50 CSPR-equivalent.
         env.set_caller(bob);
@@ -426,10 +500,18 @@ mod tests {
     }
 
     #[test]
-    fn tiny_first_deposit_one_mote_mints_one_share() {
+    fn first_deposit_below_minimum_liquidity_reverts() {
+        // SEC-02: a deposit that cannot cover the locked dead shares must revert
+        // rather than mint zero user shares. One mote can no longer mint a share.
         let (_env, vault) = setup();
-        vault.with_tokens(U512::one()).deposit();
-        assert_eq!(vault.total_shares(), U256::one());
+        let result = vault.with_tokens(U512::one()).try_deposit();
+        assert_eq!(result, Err(VaultError::DepositBelowMinimum.into()));
+
+        // Exactly MINIMUM_LIQUIDITY motes leaves the user with zero -> revert.
+        let result = vault
+            .with_tokens(U512::from(MINIMUM_LIQUIDITY))
+            .try_deposit();
+        assert_eq!(result, Err(VaultError::DepositBelowMinimum.into()));
     }
 
     #[test]
@@ -446,17 +528,120 @@ mod tests {
 
         env.set_caller(alice);
         vault.with_tokens(U512::from(100 * CSPR)).deposit();
+        let alice_shares = vault.shares_of(&alice);
 
-        // Withdraw half the shares.
-        let half = U256::from(50 * CSPR);
+        // Withdraw half of Alice's shares. With total_shares == 100 CSPR and a
+        // 100 CSPR purse balance the ratio is 1:1, so this returns ~50 CSPR.
+        let half = alice_shares / U256::from(2);
         let balance_before = env.balance_of(&alice);
         vault.withdraw(half);
 
-        assert_eq!(vault.shares_of(&alice), U256::from(50 * CSPR));
-        assert_eq!(vault.total_shares(), U256::from(50 * CSPR));
-        assert_eq!(vault.get_state().total_balance_motes, U512::from(50 * CSPR));
+        assert_eq!(vault.shares_of(&alice), alice_shares - half);
+        // SEC-01: the contract purse actually decreased by the payout. A few
+        // hundred motes of dust remain in the vault's favour because the payout
+        // floors (the dead shares are also permanently unredeemable).
+        let purse = env.balance_of(&vault);
+        assert!(purse >= U512::from(50 * CSPR));
+        assert!(purse < U512::from(50 * CSPR) + U512::from(MINIMUM_LIQUIDITY));
+        assert_eq!(vault.get_state().total_balance_motes, purse);
         // Alice received ~50 CSPR back (her account balance grew).
         assert!(env.balance_of(&alice) > balance_before);
+    }
+
+    #[test]
+    fn deposit_captures_attached_value_into_contract_purse() {
+        // SEC-01: the attached CSPR must actually land in the contract's purse,
+        // not just in a mirror Var.
+        let (env, vault) = setup();
+        assert_eq!(env.balance_of(&vault), U512::zero());
+
+        vault.with_tokens(U512::from(100 * CSPR)).deposit();
+        assert_eq!(env.balance_of(&vault), U512::from(100 * CSPR));
+
+        vault.with_tokens(U512::from(25 * CSPR)).deposit();
+        assert_eq!(env.balance_of(&vault), U512::from(125 * CSPR));
+        // The purse balance is what get_state reports (purse is authoritative).
+        assert_eq!(
+            vault.get_state().total_balance_motes,
+            env.balance_of(&vault)
+        );
+    }
+
+    #[test]
+    fn withdraw_decreases_contract_purse_balance() {
+        // SEC-01: withdraw transfers out of the contract purse, lowering it.
+        let (env, mut vault) = setup();
+        let alice = env.get_account(1);
+        env.set_caller(alice);
+        vault.with_tokens(U512::from(40 * CSPR)).deposit();
+
+        let purse_before = env.balance_of(&vault);
+        assert_eq!(purse_before, U512::from(40 * CSPR));
+
+        let quarter = vault.shares_of(&alice) / U256::from(4);
+        vault.withdraw(quarter);
+
+        let purse_after = env.balance_of(&vault);
+        assert!(purse_after < purse_before);
+        // ~30 CSPR remain (40 deposited, a quarter withdrawn). Floor rounding on
+        // the payout leaves a few hundred motes of dust in the vault's favour.
+        assert!(purse_after >= U512::from(30 * CSPR));
+        assert!(purse_after < U512::from(30 * CSPR) + U512::from(MINIMUM_LIQUIDITY));
+        assert_eq!(vault.get_state().total_balance_motes, purse_after);
+    }
+
+    #[test]
+    fn first_depositor_inflation_attack_does_not_round_victim_to_zero() {
+        // SEC-02: classic ERC-4626 first-depositor share-price inflation.
+        //
+        // The attack: a 1-mote first deposit mints 1 share, the attacker then
+        // inflates the price per share so a later small depositor's
+        // `amount * total_shares / total_balance` floors to zero shares, letting
+        // the attacker redeem the victim's deposit. The MINIMUM_LIQUIDITY dead
+        // shares (locked to the burn address) keep the share count large enough
+        // that small deposits still mint a non-zero, redeemable position.
+        //
+        // Note on Casper: the engine rejects plain CSPR transfers to a contract
+        // (`TransferToContract`), so the only way to grow the purse is a deposit.
+        // We model the price inflation with a large attacker deposit, which is
+        // the strongest in-protocol form of the manipulation.
+        let (env, vault) = setup();
+        let attacker = env.get_account(1);
+        let victim = env.get_account(2);
+
+        // Attacker's minimal viable first deposit. Before this fix a 1-mote first
+        // deposit minted exactly 1 share; now MINIMUM_LIQUIDITY dead shares are
+        // also locked, so the attacker can never hold a 1-share monopoly.
+        env.set_caller(attacker);
+        vault
+            .with_tokens(U512::from(MINIMUM_LIQUIDITY + 1))
+            .deposit();
+        let attacker_shares = vault.shares_of(&attacker);
+        assert_eq!(attacker_shares, U256::one());
+        assert_eq!(vault.dead_shares(), U256::from(MINIMUM_LIQUIDITY));
+
+        // Attacker inflates the price by depositing a large amount.
+        env.set_caller(attacker);
+        vault.with_tokens(U512::from(1_000 * CSPR)).deposit();
+
+        // Victim deposits 10 CSPR. Because the dead shares kept total_shares
+        // meaningfully > 1, the victim mints a non-zero, redeemable position
+        // instead of rounding to zero (which is what the unmitigated 1:1
+        // first-mint allowed).
+        env.set_caller(victim);
+        vault.with_tokens(U512::from(10 * CSPR)).deposit();
+        let victim_shares = vault.shares_of(&victim);
+        assert!(
+            !victim_shares.is_zero(),
+            "victim must not be rounded to zero shares"
+        );
+
+        // The victim's shares are redeemable for a positive amount of CSPR.
+        let payout = vault.get_state().total_balance_motes * victim_shares.to_u512()
+            / vault.total_shares().to_u512();
+        assert!(payout > U512::zero(), "victim position must be redeemable");
+        // The attacker never controlled the entire supply (dead shares dilute).
+        assert!(attacker_shares < vault.total_shares());
     }
 
     #[test]

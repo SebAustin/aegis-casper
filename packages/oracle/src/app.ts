@@ -18,7 +18,12 @@ import { generateAssets } from "./seed-data.js";
 
 const startedAt = Date.now();
 
-export function createApp(): express.Application {
+export interface CreateAppOptions {
+  /** Override the payments log path (default: repo-root logs/payments.jsonl). */
+  paymentsLogPath?: string;
+}
+
+export function createApp(options: CreateAppOptions = {}): express.Application {
   const env = loadEnv();
   const app = express();
 
@@ -30,12 +35,18 @@ export function createApp(): express.Application {
 
   const facilitator = createFacilitator(
     env.X402_FACILITATOR,
-    env.X402_FACILITATOR_URL
+    env.X402_FACILITATOR_URL,
+    {
+      expectedRecipient: env.ORACLE_PAYEE_ACCOUNT_HASH,
+      minAmountMotes: env.ORACLE_PRICE_MOTES,
+    }
   );
 
   // Resolve the repo-root logs directory relative to this file
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const PAYMENTS_LOG = path.resolve(__dirname, "../../../logs/payments.jsonl");
+  const PAYMENTS_LOG =
+    options.paymentsLogPath ??
+    path.resolve(__dirname, "../../../logs/payments.jsonl");
 
   // ── Health (public, no payment required) ──────────────────────────────────
 

@@ -6,3 +6,5 @@ dist/
 *.log
 .DS_Store
 wasm/
+logs/*.jsonl
+!logs/.gitkeep

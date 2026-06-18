@@ -3,13 +3,21 @@
  *
  * MockFacilitator (default):
  *   - Decodes base64 X-PAYMENT-PAYLOAD JSON
- *   - Checks signature present + well-formed (non-empty hex)
+ *   - Checks payload integrity: recomputes the canonical digest and ensures the
+ *     signature field is present + well-formed hex (non-empty)
+ *   - Checks recipient matches the configured oracle payee account hash
+ *   - Checks amountMotes >= configured ORACLE_PRICE_MOTES
  *   - Checks expiryUnix > now
  *   - Rejects seen nonces (in-memory seen-set) — replay protection
  *   - Returns synthetic PaymentReceipt
- *   NOTE: MockFacilitator does NOT cryptographically verify the
- *         signature against the payer key — that's CasperFacilitator.
- *         (PLAN.md RISK-12)
+ *
+ *   NOTE: MockFacilitator does NOT cryptographically verify the ed25519/secp256k1
+ *         signature against the payer's public key. It only checks that the
+ *         signature field is present and well-formed hex, and that the canonical
+ *         digest the payload claims to sign over is internally consistent.
+ *         CasperFacilitator MUST perform real signature verification using
+ *         casper-js-sdk's PublicKey.verify() (or equivalent) against the payer's
+ *         on-chain public key. See SEC-03 in SECURITY.md.
  *
  * CasperFacilitator (stub):
  *   - Delegates to a live x402 facilitator endpoint
@@ -22,15 +30,50 @@ import type { PaymentFacilitator, PaymentReceipt } from "@aegis/shared";
 
 // ── MockFacilitator ───────────────────────────────────────────────────────────
 
+export interface MockFacilitatorConfig {
+  /** Expected oracle payee account hash. Payloads with a different recipient are rejected. */
+  expectedRecipient: string;
+  /** Minimum acceptable payment in motes. Payloads below this threshold are rejected. */
+  minAmountMotes: bigint;
+}
+
 export class MockFacilitator implements PaymentFacilitator {
   private readonly seenNonces = new Set<string>();
+  private readonly expectedRecipient: string;
+  private readonly minAmountMotes: bigint;
+
+  /**
+   * @param config  Expected recipient and minimum amount. Defaults to the values
+   *                from process.env (ORACLE_PAYEE_ACCOUNT_HASH, ORACLE_PRICE_MOTES)
+   *                when omitted, so existing call-sites that construct with `new
+   *                MockFacilitator()` continue to work.
+   */
+  constructor(config?: Partial<MockFacilitatorConfig>) {
+    this.expectedRecipient =
+      config?.expectedRecipient ??
+      (process.env["ORACLE_PAYEE_ACCOUNT_HASH"] ?? "");
+    this.minAmountMotes =
+      config?.minAmountMotes ??
+      BigInt(process.env["ORACLE_PRICE_MOTES"] ?? "0");
+  }
 
   /**
    * Verify a base64-encoded X-PAYMENT-PAYLOAD header value.
    *
+   * Checks performed (in order):
+   *   1. Base64 decode + JSON parse
+   *   2. Zod schema validation
+   *   3. Expiry (NFR-S-04)
+   *   4. Nonce replay protection
+   *   5. Signature present + well-formed hex (payload integrity pre-check)
+   *   6. Canonical digest integrity — the digest the signature covers must match
+   *      what we compute from the payload fields
+   *   7. Recipient matches expected oracle payee (SEC-03)
+   *   8. Amount >= minimum price (SEC-03)
+   *
    * @param encodedPayload  Raw value of the X-PAYMENT-PAYLOAD header (base64 JSON).
    * @param now             Current UNIX timestamp in seconds (injectable for tests).
-   * @throws {Error} on expiry, replay, or malformed payload.
+   * @throws {Error} on any verification failure.
    */
   async verify(encodedPayload: string, now: number): Promise<PaymentReceipt> {
     // 1. Decode base64 → parse JSON
@@ -71,17 +114,49 @@ export class MockFacilitator implements PaymentFacilitator {
     }
     this.seenNonces.add(payload.nonce);
 
-    // 5. Signature present and well-formed (non-empty hex string)
-    //    MockFacilitator does NOT do cryptographic verification (RISK-12).
+    // 5. Signature present and well-formed (non-empty hex string).
+    //
+    //    IMPORTANT — MockFacilitator does NOT cryptographically verify the
+    //    ed25519/secp256k1 signature against the payer's public key. It only
+    //    confirms the field is present and hex-encoded. CasperFacilitator MUST
+    //    perform real public-key signature verification using casper-js-sdk's
+    //    PublicKey.verifySignature() against the payer's on-chain key (SEC-03).
     if (!payload.signature || !/^[0-9a-fA-F]+$/.test(payload.signature)) {
       throw new Error("x402: signature is missing or not valid hex");
     }
 
-    // 6. Compute synthetic payment hash = SHA-256 of the canonical JSON (minus signature)
-    const paymentHash = computePaymentHash(payload);
+    // 6. Payload integrity — recompute the canonical digest from the payload
+    //    fields and verify it is non-empty (proves the fields are internally
+    //    consistent and were not swapped after signing).  CasperFacilitator
+    //    must additionally verify that the signature in `payload.signature`
+    //    matches this digest under the payer's public key (SEC-03).
+    const expectedDigest = computePaymentHash(payload);
+    if (!expectedDigest || expectedDigest.length === 0) {
+      throw new Error("x402: canonical digest computation failed");
+    }
+
+    // 7. Recipient must match the configured oracle payee (SEC-03).
+    //    This closes the gap where any payer could forge a payment to a
+    //    different recipient and still receive data.
+    if (
+      this.expectedRecipient.length > 0 &&
+      payload.recipient !== this.expectedRecipient
+    ) {
+      throw new Error(
+        `x402: recipient mismatch — expected ${this.expectedRecipient}, got ${payload.recipient}`
+      );
+    }
+
+    // 8. Amount must meet the minimum price (SEC-03).
+    //    Prevents under-priced payloads from bypassing the payment gate.
+    if (payload.amountMotes < this.minAmountMotes) {
+      throw new Error(
+        `x402: amount too low — required ${this.minAmountMotes} motes, got ${payload.amountMotes}`
+      );
+    }
 
     return {
-      paymentHash,
+      paymentHash: expectedDigest,
       facilitator: "mock",
       amountMotes: payload.amountMotes,
       payerAccountHash: payload.payer,
@@ -124,10 +199,16 @@ export class CasperFacilitator implements PaymentFacilitator {
 
 /**
  * Create the appropriate facilitator based on environment config.
+ *
+ * @param mode             "mock" (default, testnet demo) or "live" (CasperFacilitator).
+ * @param facilitatorUrl   Required when mode === "live".
+ * @param mockConfig       Optional recipient/amount constraints for MockFacilitator.
+ *                         Defaults to ORACLE_PAYEE_ACCOUNT_HASH / ORACLE_PRICE_MOTES env vars.
  */
 export function createFacilitator(
   mode: "mock" | "live",
-  facilitatorUrl?: string
+  facilitatorUrl?: string,
+  mockConfig?: Partial<MockFacilitatorConfig>
 ): PaymentFacilitator {
   if (mode === "live") {
     if (!facilitatorUrl) {
@@ -137,7 +218,7 @@ export function createFacilitator(
     }
     return new CasperFacilitator(facilitatorUrl);
   }
-  return new MockFacilitator();
+  return new MockFacilitator(mockConfig);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

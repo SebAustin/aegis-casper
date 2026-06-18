@@ -149,12 +149,52 @@ export function computeCanonicalDigest(
   return createHash("sha256").update(json).digest();
 }
 
-// ── Mock signer (for offline tests) ──────────────────────────────────────────
+// ── Mock signer (for offline tests / no-key paths) ───────────────────────────
 
 /**
  * Returns a deterministic fake hex signature.
- * Only used in tests and MockLlmClient paths — never in production.
+ * Only used in tests and in the no-key demo path — never in a live signing flow.
+ * When AGENT_PRIVATE_KEY_HEX is set, `buildRealSigner` is used instead.
  */
 export function mockSign(_data: Buffer): string {
   return "deadbeef0123456789abcdef0123456789abcdef0123456789abcdef01234567";
+}
+
+// ── Real signer (casper-js-sdk) ───────────────────────────────────────────────
+
+/**
+ * Build a signer function backed by a real Casper ed25519 private key.
+ *
+ * Uses `casper-js-sdk` `PrivateKey.fromHex` and `PrivateKey.sign` to produce
+ * a valid ed25519 signature over the canonical SHA-256 digest.
+ *
+ * The SDK is imported dynamically so the agent still starts (falling back to
+ * `mockSign`) even if the SDK is not installed — matching the existing pattern
+ * in `casper-tx-client.ts`.
+ *
+ * @param privateKeyHex  Hex-encoded 32-byte ed25519 private key seed
+ *                       (the value of AGENT_PRIVATE_KEY_HEX).
+ * @returns A signer function compatible with `OracleClientConfig.sign`.
+ * @throws  If the key hex is malformed or the SDK cannot be imported.
+ */
+export async function buildRealSigner(
+  privateKeyHex: string
+): Promise<(data: Buffer) => string> {
+  // Dynamic import keeps tests that don't exercise this path fast, and matches
+  // the graceful-degrade pattern used in CasperTxClient (A-001 deviation note).
+  const { PrivateKey, KeyAlgorithm } = await import("casper-js-sdk").catch(
+    () => {
+      throw new Error(
+        "buildRealSigner: casper-js-sdk could not be imported. " +
+          "Install casper-js-sdk or use mockSign for offline/testnet runs."
+      );
+    }
+  );
+
+  const privateKey = PrivateKey.fromHex(privateKeyHex, KeyAlgorithm.ED25519);
+
+  return (data: Buffer): string => {
+    const signature = privateKey.sign(new Uint8Array(data));
+    return Buffer.from(signature).toString("hex");
+  };
 }

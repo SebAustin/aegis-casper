@@ -1,7 +1,7 @@
 {
   "/api/decisions/route": "app/api/decisions/route.js",
-  "/api/reputation/route": "app/api/reputation/route.js",
   "/api/oracle/route": "app/api/oracle/route.js",
+  "/api/reputation/route": "app/api/reputation/route.js",
   "/api/trigger/route": "app/api/trigger/route.js",
   "/api/vault/route": "app/api/vault/route.js",
   "/_not-found/page": "app/_not-found/page.js",
