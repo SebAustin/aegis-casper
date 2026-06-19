@@ -16,6 +16,8 @@
     "@fontsource/inter": "^5.1.1",
     "@fontsource/jetbrains-mono": "^5.1.1",
     "@fontsource/space-grotesk": "^5.1.1",
+    "@make-software/csprclick-core-client": "^1.11.0",
+    "casper-js-sdk": "^5.0.12",
     "next": "^15.3.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

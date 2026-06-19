@@ -8,6 +8,7 @@ import { useFocusTrap } from "@/hooks/useFocusTrap";
 import { formatCspr, formatShares } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
 import { TxHashChip } from "@/components/ui/TxHashChip";
+import { buildVaultTransaction } from "@/lib/casper-tx";
 
 type ModalStep = "amount" | "review" | "signing" | "submitted" | "error";
 
@@ -111,18 +112,22 @@ export function DepositWithdrawModal({ mode, vaultData, onClose }: Props) {
     );
 
     try {
-      // Construct a minimal deploy stub. In a full integration, this would be
-      // a properly serialised Casper deploy built with casper-js-sdk.
-      const deployStub = {
-        type: mode,
-        amount: amountNum,
-        asset: mode === "deposit" ? "CSPR" : "AEGIS",
-        vaultHash: process.env["NEXT_PUBLIC_VAULT_CONTRACT_HASH"] ?? "",
-        timestamp: Date.now(),
-      };
+      // Build a REAL Casper 2.0 contract-call transaction for the vault
+      // deposit / withdraw entry point (SC-02). The connected wallet identifier
+      // is the signer's public key hex; the wallet connector signs + broadcasts.
+      const prepared = buildVaultTransaction(
+        mode,
+        {
+          senderPublicKeyHex: walletState.accountHash,
+          vaultContractHash:
+            process.env["NEXT_PUBLIC_VAULT_CONTRACT_HASH"] ?? "",
+          network: process.env["NEXT_PUBLIC_CASPER_NETWORK"] ?? "casper-test",
+        },
+        amountNum
+      );
 
       const hash = await Promise.race([
-        signAndDeploy(deployStub),
+        signAndDeploy(prepared),
         timeoutPromise,
       ]);
 

@@ -86,7 +86,7 @@ JSON output (`ANTHROPIC_API_KEY`); an OpenAI implementation is swappable via `LL
 ## A-007 — Wallet and signing strategy
 
 **Assumed:**
-- Dashboard UI: users sign transactions with the Casper Wallet browser extension via the CSPR.click SDK (`@make-software/cspr-click`).
+- Dashboard UI: users sign transactions with the Casper Wallet browser extension via the CSPR.click SDK. The installed package is `@make-software/csprclick-core-client` (the React UI meta-package conflicts with React 19 — see A-WALLET-01).
 - Autonomous agent: signs with a testnet-only keypair loaded from `AGENT_PRIVATE_KEY_HEX` environment variable. No mainnet keys. No real funds.
 - Both paths use the Casper 2.0 `casper-js-sdk` for transaction construction.
 - The `casper-js-sdk` **direct-sign path is dev/CI only** (headless signing for automated tests and demos without a browser). It does **not** satisfy SC-09, which requires a real manual Casper Wallet extension run. See A-007a.
@@ -104,6 +104,22 @@ JSON output (`ANTHROPIC_API_KEY`); an OpenAI implementation is swappable via `LL
 **Why:** Conflating the two would let an automated direct-sign run falsely "pass" SC-09, which specifically tests the human-in-the-loop wallet UX.
 
 **Override:** None — this scoping is intentional. The manual wallet run remains a required demo step.
+
+---
+
+## A-WALLET-01 — CSPR.click package resolution (SC-09 connector)
+
+**Assumed / actual outcome:** The real CSPR.click connector (`packages/dashboard/src/components/wallet/csprClickConnector.ts`) is implemented and is the **browser default**, wired in `WalletProvider.tsx`; the mock connector is an explicit env-selected (`NEXT_PUBLIC_USE_MOCK_WALLET=true`) / SSR fallback only.
+
+What actually installed here:
+- `@make-software/csprclick-core-client@1.11.0` installs and typechecks cleanly, and is a real dashboard dependency (`packages/dashboard/package.json`). It provides the TypeScript surface for the CSPR.click runtime API (`connect` / `getActivePublicKey` / `send`) and the `Window.csprclick` global augmentation. The connector is typed and built against this real package (type-only import; the package ships declarations + a runtime that the host loads).
+- The higher-level React UI meta-package `@make-software/csprclick-ui` (which exposes `<CsprClickProvider>` and would normally bootstrap the hosted runtime script) hard-pins **React 18.3.1** and conflicts with this dashboard's **React 19**. It was therefore **not** installed.
+
+**Consequence (the single gated step):** Because the React provider is not installed, the `window.csprclick` runtime must be bootstrapped by loading the hosted CSPR.click runtime script + calling its `init` (an app-key / client-id from the CSPR.click console). The connector logic (connect / sign / broadcast) is real and correct against the real runtime API; only this one bootstrap call is gated, exactly like the agent's funded-key gating. Without the bootstrap, `getRuntime()` throws a clear "runtime not initialized" error rather than faking a signature.
+
+**Why:** Keeps SC-09 satisfiable by a real Casper Wallet run while not forcing a React-version downgrade for the whole dashboard. Swapping to the full `<CsprClickProvider>` bootstrap (or loading the runtime `<script>`) is an additive change in `WalletProvider.tsx` and does not touch the connector or UI.
+
+**Override:** Pin the dashboard to React 18 and add `@make-software/csprclick-ui` + `@make-software/cspr-click` to use the provider-driven bootstrap instead of the global-driven one.
 
 ---
 

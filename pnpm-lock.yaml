@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      casper-js-sdk:
+        specifier: ^5.0.12
+        version: 5.0.12
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -63,6 +67,12 @@ importers:
       '@fontsource/space-grotesk':
         specifier: ^5.1.1
         version: 5.2.10
+      '@make-software/csprclick-core-client':
+        specifier: ^1.11.0
+        version: 1.11.0
+      casper-js-sdk:
+        specifier: ^5.0.12
+        version: 5.0.12
       next:
         specifier: ^15.3.3
         version: 15.5.19(@babel/core@7.29.7)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -730,6 +740,9 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@make-software/csprclick-core-client@1.11.0':
+    resolution: {integrity: sha512-WTb0DWbVMOeGh2+NChq6QlevJM9RIK5zEiQx643u1LySmLZJh8/tWZQCjsT6bMJvmBS6xcj27AtXcAVHkj5U7w==}
 
   '@modelcontextprotocol/sdk@1.29.0':
     resolution: {integrity: sha512-zo37mZA9hJWpULgkRpowewez1y6ML5GsXJPY8FI0tBBCd77HEvza4jDqRKOXgHNn867PVGCyTdzqpz0izu5ZjQ==}
@@ -4054,6 +4067,8 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@make-software/csprclick-core-client@1.11.0': {}
 
   '@modelcontextprotocol/sdk@1.29.0(zod@3.25.76)':
     dependencies:

@@ -3,12 +3,26 @@
 import { useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { WalletContext } from "./WalletContext";
-import type { WalletState } from "./WalletContext";
+import type { WalletConnector, WalletState } from "./WalletContext";
 import { mockConnector } from "./mockConnector";
+import { csprClickConnector } from "./csprClickConnector";
 
-// To swap in the real CSPR.click SDK, replace `mockConnector` here.
-// See mockConnector.ts for detailed instructions (A-WALLET-01).
-const connector = mockConnector;
+/**
+ * Connector selection (SC-09):
+ *   - Default in the browser is the REAL CSPR.click connector (Casper Wallet).
+ *   - The mock connector is an explicit headless / CI fallback, selected when
+ *     `NEXT_PUBLIC_USE_MOCK_WALLET=true`, or when there is no `window`
+ *     (server-side render / non-browser environments).
+ */
+function selectConnector(): WalletConnector {
+  const forceMock = process.env["NEXT_PUBLIC_USE_MOCK_WALLET"] === "true";
+  if (forceMock || typeof window === "undefined") {
+    return mockConnector;
+  }
+  return csprClickConnector;
+}
+
+const connector = selectConnector();
 
 interface Props {
   children: ReactNode;

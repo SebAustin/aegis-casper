@@ -19,6 +19,9 @@
     "contracts:test": "cd contracts && cargo test",
     "deploy:testnet": "node scripts/deploy-testnet.mjs"
   },
+  "dependencies": {
+    "casper-js-sdk": "^5.0.12"
+  },
   "devDependencies": {
     "typescript": "^5.7.2",
     "vitest": "^2.1.8",
