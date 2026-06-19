@@ -117,6 +117,20 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** Poll a predicate until true or the timeout elapses (robust under load). */
+async function waitFor(
+  predicate: () => boolean,
+  timeoutMs: number
+): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error(`waitFor: condition not met within ${timeoutMs}ms`);
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 function makeBaseConfig(overrides: Record<string, unknown> = {}) {
   return {
     reallocationDriftBps: 200,
@@ -184,10 +198,13 @@ describe("AgentLoop — loop-overlap guard (RISK-14)", () => {
       resolvePrior = resolve;
     });
 
-    // LLM client that stalls until we release the lock — simulates a slow iteration
+    // LLM client that stalls the FIRST decide() until we release the lock, then
+    // resolves instantly for any subsequent call — simulates a slow iteration.
+    let decideCalls = 0;
     const stallingLlm: LlmClient = {
       async decide(): Promise<LlmDecision> {
-        await priorIterationHeld;
+        decideCalls += 1;
+        if (decideCalls === 1) await priorIterationHeld;
         return {
           allocation: HIGH_DRIFT_ALLOCATION,
           confidence: 80,
@@ -204,45 +221,42 @@ describe("AgentLoop — loop-overlap guard (RISK-14)", () => {
       tx: txClient,
     });
 
-    // Capture stdout to verify the skip message
+    // Capture stdout to verify the skip message.
     const output: string[] = [];
     vi.spyOn(process.stdout, "write").mockImplementation((chunk: unknown) => {
       output.push(String(chunk));
       return true;
     });
 
-    // Start the first iteration (it stalls at LLM decide)
-    const firstIteration = loop.runOnce();
-
-    // Give the first iteration time to reach the stall point
-    await new Promise<void>((resolve) => setTimeout(resolve, 50));
-
-    // Now start the loop (using the internal tick mechanism via start + immediate stop)
-    // Instead, we call tick directly via the public API: runOnce while first is running.
-    // Since running=true after iterate() sets it, a concurrent call to tick() should skip.
-    // We access the internal tick mechanism by calling start() with a very short interval.
+    // Drive the overlap guard purely through the loop's own tick mechanism:
+    // start() fires tick #1 immediately, which sets running=true and stalls at
+    // the LLM. Every subsequent interval tick must hit the running guard and skip.
     loop.start(10);
 
-    // Wait a bit for at least one tick to fire and see the running=true guard
-    await new Promise<void>((resolve) => setTimeout(resolve, 100));
+    // Poll (not fixed-sleep) until at least one tick has been skipped — robust
+    // under concurrent test load.
+    await waitFor(
+      () => output.some((l) => l.includes("prior_iteration_running")),
+      2000
+    );
 
-    // Release the stalling LLM
-    resolvePrior();
-
-    // Wait for first iteration to complete
-    await firstIteration;
+    // Stop the loop FIRST so no further ticks are scheduled, then release the
+    // stalled first iteration. This makes the count deterministic: only the
+    // single in-flight (non-skipped) iteration can complete and submit.
     loop.stop();
+    resolvePrior();
+    await waitFor(() => txClient.submittedReallocations.length >= 1, 2000);
 
-    // Restore stdout
+    // Allow any in-flight skipped tick to unwind before teardown removes tmpDir.
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
     vi.restoreAllMocks();
 
-    // Verify at least one tick was skipped
     const skipMessages = output.filter((line) =>
       line.includes("prior_iteration_running")
     );
     expect(skipMessages.length).toBeGreaterThanOrEqual(1);
 
-    // Only one reallocate should have been submitted (from the first, non-skipped iteration)
+    // Exactly one reallocate: only the first (non-skipped) iteration acted.
     expect(txClient.submittedReallocations).toHaveLength(1);
   });
 });
