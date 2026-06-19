@@ -199,10 +199,7 @@ function buildMockFetch(recipient: string) {
     { assetId: 4, name: "CSPR Staking", apyBps: 630, riskScore: 25, liquidityScore: 80, dataFreshnessMs: Date.now() },
   ];
 
-  let callCount = 0;
-
   return vi.fn().mockImplementation((_url: string, opts?: RequestInit) => {
-    callCount++;
     const headers = (opts?.headers ?? {}) as Record<string, string>;
     const hasPayment = Boolean(headers["x-payment-payload"]);
 
