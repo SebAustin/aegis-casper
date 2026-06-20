@@ -115,7 +115,7 @@ Errors: `NotOwner`, `AlreadyRegistered`, `NotRegistered`.
 
 ## Test coverage (SC-10)
 
-`cargo test` runs 26 tests on the OdraVM backend:
+`cargo test` runs 29 tests on the OdraVM backend:
 
 - **Vault:** init state; first-deposit 1:1 math; proportional second deposit;
   1-mote edge case; zero-deposit revert; proportional withdraw; zero/over-balance

@@ -1,0 +1,130 @@
+# Aegis — Docker Compose
+#
+# Brings up oracle + agent + mcp-server + dashboard wired together.
+# All values default to mocks — no real keys or funds required.
+#
+# Usage:
+#   docker compose up                    # full stack, all mocks
+#   docker compose up oracle dashboard   # subset
+#   docker compose logs -f agent         # tail agent decisions
+#
+# Environment:
+#   Copy .env.docker to .env.docker.local and fill in real values to use
+#   a real LLM key or testnet credentials. docker compose picks up
+#   .env.docker.local automatically when it exists (it is gitignored).
+#
+# Volumes:
+#   logs/  is mounted into oracle and agent so decisions.jsonl and
+#   payments.jsonl are written to the host for inspection and dashboard
+#   polling.
+
+services:
+
+  # ── Oracle: x402-gated RWA data ─────────────────────────────────────────────
+  oracle:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: oracle
+    image: aegis-oracle:local
+    restart: unless-stopped
+    ports:
+      - "4021:4021"
+    env_file:
+      - .env.docker
+    environment:
+      ORACLE_PORT: "4021"
+      X402_FACILITATOR: "mock"
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4021/api/health"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # ── Agent: perceive → decide → act loop ──────────────────────────────────────
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: agent
+    image: aegis-agent:local
+    restart: unless-stopped
+    depends_on:
+      oracle:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      ORACLE_URL: "http://oracle:4021"
+      AGENT_LOOP_INTERVAL_MS: "30000"
+      REALLOCATION_DRIFT_BPS: "50"
+      X402_FACILITATOR: "mock"
+    volumes:
+      - ./logs:/app/logs
+    # mcp-server depends on the same log files; agent writes, dashboard reads
+    # No ports exposed — the agent only writes to logs and calls oracle + chain
+
+  # ── MCP server: stdio over docker run -i ─────────────────────────────────────
+  # The MCP server uses stdio transport and is not a long-running HTTP service.
+  # To invoke it: docker compose run --rm mcp-server
+  # or: docker run --rm -i aegis-mcp:local
+  # To use with MCP Inspector: see DEPLOYMENT.md §6
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: mcp-server
+    image: aegis-mcp:local
+    depends_on:
+      oracle:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      ORACLE_URL: "http://oracle:4021"
+    volumes:
+      - ./logs:/app/logs
+    stdin_open: true
+    tty: false
+    profiles:
+      - mcp   # opt-in: docker compose --profile mcp up mcp-server
+
+  # ── Dashboard: Next.js cockpit ────────────────────────────────────────────────
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SERVICE: dashboard
+    image: aegis-dashboard:local
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      oracle:
+        condition: service_healthy
+    env_file:
+      - .env.docker
+    environment:
+      NEXT_PUBLIC_ORACLE_URL: "http://localhost:4021"
+      NEXT_PUBLIC_USE_MOCK_WALLET: "true"
+    volumes:
+      # Mount logs read-only so the dashboard API routes can serve decisions.jsonl
+      - ./logs:/app/logs:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+volumes:
+  # Named volume alternative — not used by default (host bind mount is used
+  # so logs are inspectable on the host without docker exec)
+  # logs:
