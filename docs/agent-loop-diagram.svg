@@ -1,0 +1,102 @@
+<svg viewBox="0 0 1040 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t d" font-family="'Space Grotesk','Segoe UI',system-ui,sans-serif">
+  <title id="t">Aegis autonomous agent loop</title>
+  <desc id="d">The agent loop: PERCEIVE reads vault and reputation via CSPR.cloud and pays via x402 for RWA yields; DECIDE prompts an LLM and Zod-validates the allocation; safety gates skip-and-log on failure; ACT signs and submits a reallocate transaction and, every N epochs, an update_reputation transaction to the Vault and Registry contracts; the loop returns on the next tick.</desc>
+  <defs>
+    <marker id="ac" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3fd0c0"/></marker>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#6b7c90"/></marker>
+    <marker id="aa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#f3b54a"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="1040" height="600" fill="#0a0e14"/>
+  <rect x="0" y="0" width="1040" height="4" fill="#3fd0c0"/>
+
+  <text x="40" y="46" fill="#eef3f9" font-size="25" font-weight="600">Aegis — Autonomous Agent Loop</text>
+  <text x="41" y="70" fill="#8ea1b6" font-size="13" font-family="'JetBrains Mono',monospace">perceive → decide → act · every 30s (demo) / 15m (prod) · survives any single-iteration failure</text>
+
+  <g font-size="10.5" font-family="'JetBrains Mono',monospace" fill="#b7c4d4">
+    <line x1="742" y1="44" x2="764" y2="44" stroke="#3fd0c0" stroke-width="2" marker-end="url(#ac)"/><text x="770" y="48">on-chain write</text>
+    <line x1="742" y1="62" x2="764" y2="62" stroke="#f3b54a" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#aa)"/><text x="770" y="66">x402 paid</text>
+    <line x1="892" y1="44" x2="914" y2="44" stroke="#6b7c90" stroke-width="2" marker-end="url(#ag)"/><text x="920" y="48">read / flow</text>
+  </g>
+
+  <g>
+    <rect x="40" y="120" width="232" height="176" rx="12" fill="#0f2128" stroke="#3fd0c0" stroke-width="1.5"/>
+    <text x="60" y="148" fill="#3fd0c0" font-size="13" font-weight="700" letter-spacing="2">PERCEIVE</text>
+    <line x1="60" y1="158" x2="252" y2="158" stroke="#223a3c" stroke-width="1"/>
+    <text x="60" y="186" fill="#eef3f9" font-size="13">read vault + reputation</text>
+    <text x="60" y="204" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">via CSPR.cloud RPC</text>
+    <text x="60" y="240" fill="#f3b54a" font-size="13">x402 paid GET</text>
+    <text x="60" y="258" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">RWA yields ← oracle</text>
+    <text x="60" y="282" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">+ payment receipt logged</text>
+  </g>
+
+  <g>
+    <rect x="308" y="120" width="232" height="176" rx="12" fill="#1b1a12" stroke="#f3b54a" stroke-width="1.5"/>
+    <text x="328" y="148" fill="#f3b54a" font-size="13" font-weight="700" letter-spacing="2">DECIDE</text>
+    <line x1="328" y1="158" x2="520" y2="158" stroke="#3a3320" stroke-width="1"/>
+    <text x="328" y="186" fill="#eef3f9" font-size="13">build prompt → LLM</text>
+    <text x="328" y="204" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">Claude / OpenAI</text>
+    <text x="328" y="234" fill="#eef3f9" font-size="13">Zod-validate allocation</text>
+    <text x="328" y="252" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">malformed → skip, never submit</text>
+    <text x="328" y="282" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">confidence 0–100 + rationale</text>
+  </g>
+
+  <g>
+    <polygon points="628,150 690,208 628,266 566,208" fill="#16191c" stroke="#f3b54a" stroke-width="1.5"/>
+    <text x="628" y="200" fill="#f3b54a" font-size="12" font-weight="700" text-anchor="middle">GATES</text>
+    <text x="628" y="218" fill="#8ea1b6" font-size="9.5" font-family="'JetBrains Mono',monospace" text-anchor="middle">5 checks</text>
+  </g>
+
+  <g>
+    <rect x="724" y="120" width="232" height="176" rx="12" fill="#102218" stroke="#5fd08a" stroke-width="1.5"/>
+    <text x="744" y="148" fill="#5fd08a" font-size="13" font-weight="700" letter-spacing="2">ACT</text>
+    <line x1="744" y1="158" x2="936" y2="158" stroke="#1f3a2a" stroke-width="1"/>
+    <text x="744" y="186" fill="#eef3f9" font-size="13">sign reallocate tx</text>
+    <text x="744" y="204" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">casper-js-sdk · ed25519</text>
+    <text x="744" y="234" fill="#eef3f9" font-size="13">submit → CSPR.cloud</text>
+    <text x="744" y="252" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">confirm async (non-blocking)</text>
+    <text x="744" y="282" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">log tx hash → decisions.jsonl</text>
+  </g>
+
+  <g font-size="11" font-family="'JetBrains Mono',monospace" fill="#93a4b8">
+    <line x1="272" y1="208" x2="304" y2="208" stroke="#6b7c90" stroke-width="1.8" marker-end="url(#ag)"/>
+    <line x1="540" y1="208" x2="562" y2="208" stroke="#6b7c90" stroke-width="1.8" marker-end="url(#ag)"/>
+    <line x1="692" y1="208" x2="720" y2="208" stroke="#3fd0c0" stroke-width="1.8" marker-end="url(#ac)"/>
+    <text x="706" y="200" text-anchor="middle" fill="#a7e8df">pass</text>
+  </g>
+
+  <g>
+    <rect x="548" y="324" width="160" height="46" rx="9" fill="#1b1414" stroke="#e0613a"/>
+    <text x="628" y="345" fill="#e9a08a" font-size="12.5" font-weight="600" text-anchor="middle">SKIP + log</text>
+    <text x="628" y="361" fill="#8ea1b6" font-size="10" font-family="'JetBrains Mono',monospace" text-anchor="middle">no transaction</text>
+    <line x1="628" y1="266" x2="628" y2="320" stroke="#e0613a" stroke-width="1.6" marker-end="url(#aa)"/>
+    <text x="648" y="298" fill="#e9a08a" font-size="11" font-family="'JetBrains Mono',monospace">fail</text>
+  </g>
+
+  <text x="270" y="392" fill="#7d8ea2" font-size="10.5" font-family="'JetBrains Mono',monospace" text-anchor="middle">gates: paused · balance&lt;min · confidence&lt;min · sanity (5 slots ≤6000bps Σ=10000) · drift≤threshold</text>
+
+  <g>
+    <rect x="620" y="452" width="184" height="58" rx="10" fill="#16191c" stroke="#f3b54a"/>
+    <text x="638" y="478" fill="#eef3f9" font-size="13" font-weight="600">Vault contract</text>
+    <text x="638" y="497" fill="#8ea1b6" font-size="10.5" font-family="'JetBrains Mono',monospace">Odra · reallocate</text>
+  </g>
+  <g>
+    <rect x="824" y="452" width="184" height="58" rx="10" fill="#16191c" stroke="#f3b54a"/>
+    <text x="842" y="478" fill="#eef3f9" font-size="13" font-weight="600">Registry contract</text>
+    <text x="842" y="497" fill="#8ea1b6" font-size="10.5" font-family="'JetBrains Mono',monospace">Odra · update_reputation</text>
+  </g>
+
+  <g font-size="11" font-family="'JetBrains Mono',monospace" fill="#93a4b8">
+    <path d="M804,296 L804,430 L712,430 L712,448" fill="none" stroke="#3fd0c0" stroke-width="1.8" marker-end="url(#ac)"/>
+    <text x="812" y="418" text-anchor="start" fill="#a7e8df">signed reallocate</text>
+
+    <path d="M916,296 L916,448" fill="none" stroke="#3fd0c0" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#ac)"/>
+    <text x="924" y="360" text-anchor="start" fill="#a7e8df">every N epochs:</text>
+    <text x="924" y="375" text-anchor="start" fill="#a7e8df">update_reputation</text>
+
+    <path d="M740,296 L740,408 L110,408 L110,296" fill="none" stroke="#6b7c90" stroke-width="1.8" marker-end="url(#ag)"/>
+    <text x="410" y="401" text-anchor="middle">next tick · interval timer · overlap-guard skips if prior run still active</text>
+  </g>
+
+  <text x="520" y="560" fill="#7d8ea2" font-size="11" font-family="'JetBrains Mono',monospace" text-anchor="middle">every iteration appended to logs/decisions.jsonl + logs/payments.jsonl — fully auditable</text>
+</svg>

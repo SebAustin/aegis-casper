@@ -165,6 +165,8 @@ Visual direction: "Deep Space Instrument Panel" — Space Grotesk display type, 
 
 ## 3. The Perceive→Decide→Act Loop
 
+![Aegis autonomous agent loop](agent-loop-diagram.svg)
+
 ```mermaid
 stateDiagram-v2
   [*] --> IDLE

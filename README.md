@@ -89,6 +89,8 @@ flowchart TB
 
 The agent runs a `perceive → decide → act` loop:
 
+![Aegis autonomous agent loop](docs/agent-loop-diagram.svg)
+
 1. **Perceive** — query vault state from CSPR.cloud, fetch oracle data via an x402-signed micropayment, read on-chain reputation.
 2. **Decide** — build a structured prompt, call the LLM, Zod-validate the JSON response, write a `DecisionLogEntry` to `logs/decisions.jsonl`.
 3. **Gate** — skip if vault is paused, balance is too low, confidence is too low, allocation fails the sanity bound, or drift is within threshold.
