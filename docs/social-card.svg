@@ -1,0 +1,36 @@
+<svg viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Aegis — Autonomous RWA Yield Agent on Casper" font-family="'Space Grotesk','Segoe UI',system-ui,sans-serif">
+  <rect x="0" y="0" width="1200" height="630" fill="#0a0e14"/>
+  <rect x="0" y="0" width="1200" height="6" fill="#f3b54a"/>
+  <polygon points="980.00,100.00 1109.90,175.00 1109.90,325.00 980.00,400.00 850.10,325.00 850.10,175.00" fill="none" stroke="#22323f" stroke-width="2"/>
+  <polygon points="980.00,112.00 1099.51,181.00 1099.51,319.00 980.00,388.00 860.49,319.00 860.49,181.00" fill="none" stroke="#3fd0c0" stroke-width="1" opacity="0.35"/>
+  <path d="M 985.02,154.13 A 96 96 0 0 1 1075.11,263.03 L 1037.46,257.87 A 58 58 0 0 0 983.04,192.08 Z" fill="#f3b54a"/>
+  <path d="M 1073.23,272.90 A 96 96 0 0 1 985.02,345.87 L 983.04,307.92 A 58 58 0 0 0 1036.33,263.83 Z" fill="#3fd0c0"/>
+  <path d="M 974.98,345.87 A 96 96 0 0 1 909.33,314.98 L 937.31,289.26 A 58 58 0 0 0 976.96,307.92 Z" fill="#e0834a"/>
+  <path d="M 902.93,307.24 A 96 96 0 0 1 896.36,202.87 L 929.47,221.53 A 58 58 0 0 0 933.44,284.58 Z" fill="#5fd08a"/>
+  <path d="M 901.75,194.39 A 96 96 0 0 1 974.98,154.13 L 976.96,192.08 A 58 58 0 0 0 932.72,216.40 Z" fill="#9b8cf0"/>
+  <circle cx="980" cy="250" r="40" fill="#0a0e14"/>
+  <text x="980" y="248" fill="#eef3f9" font-size="22" font-weight="700" text-anchor="middle">RWA</text>
+  <text x="980" y="270" fill="#8ea1b6" font-size="12" text-anchor="middle" font-family="'JetBrains Mono',monospace">vault</text>
+  <text x="64" y="92" fill="#f3b54a" font-size="19" font-weight="600" letter-spacing="4" font-family="'JetBrains Mono',monospace">CASPER AGENTIC BUILDATHON 2026</text>
+  <text x="60" y="222" fill="#eef3f9" font-size="110" font-weight="700">Aegis</text>
+  <text x="66" y="276" fill="#3fd0c0" font-size="33" font-weight="600">Autonomous RWA Yield-Routing Agent</text>
+  <text x="66" y="314" fill="#8ea1b6" font-size="20" font-family="'JetBrains Mono',monospace">Self-driving on-chain portfolio manager · verifiable reputation</text>
+  <g font-family="'JetBrains Mono',monospace">
+    <rect x="64" y="356" width="176" height="44" rx="22" fill="#10212a" stroke="#3fd0c0"/>
+    <text x="152" y="384" fill="#a7e8df" font-size="17" font-weight="600" text-anchor="middle">178 tests green</text>
+    <rect x="252" y="356" width="158" height="44" rx="22" fill="#102218" stroke="#5fd08a"/>
+    <text x="331" y="384" fill="#9fe0b8" font-size="17" font-weight="600" text-anchor="middle">0 HIGH vulns</text>
+    <rect x="422" y="356" width="150" height="44" rx="22" fill="#1b1a12" stroke="#f3b54a"/>
+    <text x="497" y="384" fill="#f6cd86" font-size="17" font-weight="600" text-anchor="middle">SOLID 4.0/5</text>
+  </g>
+  <text x="64" y="452" fill="#7d8ea2" font-size="14" letter-spacing="2" font-family="'JetBrains Mono',monospace">CASPER AI TOOLKIT PILLARS</text>
+  <g>
+    <rect x="64" y="466" width="116" height="46" rx="10" fill="#16191c" stroke="#2a3a4e"/><text x="122" y="495" fill="#eef3f9" font-size="18" font-weight="600" text-anchor="middle">Odra</text>
+    <rect x="192" y="466" width="116" height="46" rx="10" fill="#16191c" stroke="#2a3a4e"/><text x="250" y="495" fill="#eef3f9" font-size="18" font-weight="600" text-anchor="middle">MCP</text>
+    <rect x="320" y="466" width="116" height="46" rx="10" fill="#16191c" stroke="#2a3a4e"/><text x="378" y="495" fill="#eef3f9" font-size="18" font-weight="600" text-anchor="middle">x402</text>
+    <rect x="448" y="466" width="232" height="46" rx="10" fill="#16191c" stroke="#2a3a4e"/><text x="564" y="495" fill="#eef3f9" font-size="18" font-weight="600" text-anchor="middle">CSPR.cloud / click</text>
+  </g>
+  <line x1="64" y1="560" x2="1136" y2="560" stroke="#1b2531" stroke-width="1"/>
+  <text x="64" y="592" fill="#8ea1b6" font-size="18" font-family="'JetBrains Mono',monospace">github.com/SebAustin/aegis-casper</text>
+  <text x="1136" y="592" fill="#5b6b7e" font-size="16" font-family="'JetBrains Mono',monospace" text-anchor="end">perceive → decide → act</text>
+</svg>

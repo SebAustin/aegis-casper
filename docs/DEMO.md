@@ -6,6 +6,18 @@
 
 ---
 
+## Opening Frame (~10 seconds)
+
+Open on the system architecture diagram as a title card while the narration sets up the project. It shows, at a glance, all four Casper AI Toolkit pillars the demo will exercise (Odra · MCP · x402 · CSPR.cloud/click).
+
+![Aegis system architecture](architecture-diagram.svg)
+
+**Narration cue:** "Aegis is an autonomous agent that manages a tokenized real-world-asset yield vault on Casper — it pays for data with x402, reasons with an LLM, and signs its own on-chain transactions."
+
+> Use `docs/architecture-diagram.png` (2080×1520) for the recording overlay if your editor prefers a raster asset.
+
+---
+
 ## Prerequisites
 
 ### Local-only beats (no testnet key needed)
@@ -91,6 +103,10 @@ Set your recording resolution to 1920x1080. Position the browser so all five das
 ## Beat 3 — Agent Loop Running: Perceive → Decide (~45 seconds)
 
 **Runs fully locally with mocks.**
+
+Optionally picture-in-picture the loop diagram in a corner while the live logs scroll, so viewers map each log line to a loop phase.
+
+![Aegis autonomous agent loop](agent-loop-diagram.svg)
 
 **Steps:**
 
@@ -207,6 +223,8 @@ npx @modelcontextprotocol/inspector node packages/mcp-server/dist/server.js
 Return to the full dashboard view showing all five panels populated with live data.
 
 **Narration cue:** "Aegis — autonomous on-chain yield routing for Casper Network. Every perceive, decide, and act step is logged, gated, and auditable. No human in the loop required."
+
+End on the social card (`docs/social-card.png`) holding the title, tagline, and repo URL for the final ~3 seconds.
 
 ---
 
