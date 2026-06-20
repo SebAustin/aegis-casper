@@ -1,9 +1,0 @@
-{
-  "/_not-found/page": "/_not-found",
-  "/api/oracle/route": "/api/oracle",
-  "/api/reputation/route": "/api/reputation",
-  "/api/trigger/route": "/api/trigger",
-  "/api/decisions/route": "/api/decisions",
-  "/api/vault/route": "/api/vault",
-  "/page": "/"
-}

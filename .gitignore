@@ -8,3 +8,5 @@ dist/
 wasm/
 logs/*.jsonl
 !logs/.gitkeep
+.next/
+packages/*/.next/
