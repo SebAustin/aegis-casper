@@ -25,6 +25,10 @@
 
 Aegis is a **5-service + 2-contract** system. Five Node.js services run off-chain; two Odra contracts run on Casper Testnet and are the authoritative source of truth for vault balances and reputation scores.
 
+![Aegis system architecture](architecture-diagram.svg)
+
+> Rendered diagram above; the Mermaid source below is kept in sync for text-based tooling.
+
 ```mermaid
 flowchart TB
   subgraph Browser["Browser (untrusted client)"]

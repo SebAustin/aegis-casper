@@ -1,0 +1,132 @@
+<svg viewBox="0 0 1040 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="t d" font-family="'Space Grotesk','Segoe UI',system-ui,sans-serif">
+  <title id="t">Aegis system architecture</title>
+  <desc id="d">Autonomous RWA yield agent on Casper Testnet: a Next.js dashboard and Casper Wallet, an autonomous agent loop with an MCP server, an x402 oracle, an LLM provider and CSPR.cloud gateway, writing to Vault and Registry Odra contracts on Casper Testnet, indexed by cspr.live.</desc>
+  <defs>
+    <marker id="ac" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#3fd0c0"/></marker>
+    <marker id="ag" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#6b7c90"/></marker>
+    <marker id="aa" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="#f3b54a"/></marker>
+  </defs>
+
+  <rect x="0" y="0" width="1040" height="760" fill="#0a0e14"/>
+  <rect x="0" y="0" width="1040" height="4" fill="#f3b54a"/>
+
+  <text x="40" y="48" fill="#eef3f9" font-size="27" font-weight="600">Aegis — System Architecture</text>
+  <text x="41" y="72" fill="#8ea1b6" font-size="13.5" font-family="'JetBrains Mono',monospace">Autonomous RWA Yield Agent · Casper Testnet · Odra · MCP · x402 · CSPR.cloud</text>
+
+  <g font-size="11" font-family="'JetBrains Mono',monospace">
+    <rect x="660" y="24" width="340" height="56" rx="8" fill="#0e141d" stroke="#233042"/>
+    <circle cx="678" cy="42" r="5" fill="#141c28" stroke="#f3b54a" stroke-width="1.5"/>
+    <text x="690" y="46" fill="#b7c4d4">Casper AI Toolkit pillar</text>
+    <line x1="838" y1="42" x2="864" y2="42" stroke="#3fd0c0" stroke-width="2" marker-end="url(#ac)"/>
+    <text x="870" y="46" fill="#b7c4d4">on-chain write (signed tx)</text>
+    <line x1="672" y1="64" x2="698" y2="64" stroke="#6b7c90" stroke-width="2" marker-end="url(#ag)"/>
+    <text x="704" y="68" fill="#b7c4d4">read / query</text>
+    <line x1="838" y1="64" x2="864" y2="64" stroke="#f3b54a" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#aa)"/>
+    <text x="870" y="68" fill="#b7c4d4">x402 paid call</text>
+  </g>
+
+  <rect x="44" y="556" width="924" height="160" rx="12" fill="#0c1119" stroke="#233042"/>
+  <text x="64" y="582" fill="#9fb0c4" font-size="12" font-weight="600" letter-spacing="1.5">CASPER TESTNET — SOURCE OF TRUTH · TRANSACTION-PRODUCING ON-CHAIN COMPONENT</text>
+
+  <g>
+    <rect x="120" y="110" width="300" height="66" rx="10" fill="#141c28" stroke="#2a3a4e"/>
+    <text x="138" y="139" fill="#eef3f9" font-size="16" font-weight="600">Dashboard</text>
+    <text x="138" y="160" fill="#8ea1b6" font-size="12" font-family="'JetBrains Mono',monospace">Next.js 15 cockpit · 15s polling</text>
+  </g>
+  <g>
+    <rect x="620" y="110" width="300" height="66" rx="10" fill="#16191c" stroke="#f3b54a"/>
+    <circle cx="903" cy="127" r="4.5" fill="#141c28" stroke="#f3b54a" stroke-width="1.5"/>
+    <text x="638" y="139" fill="#eef3f9" font-size="16" font-weight="600">Casper Wallet</text>
+    <text x="638" y="160" fill="#8ea1b6" font-size="12" font-family="'JetBrains Mono',monospace">CSPR.click · user signing</text>
+  </g>
+
+  <g>
+    <rect x="44" y="236" width="214" height="78" rx="10" fill="#16191c" stroke="#f3b54a"/>
+    <circle cx="241" cy="253" r="4.5" fill="#141c28" stroke="#f3b54a" stroke-width="1.5"/>
+    <text x="62" y="266" fill="#eef3f9" font-size="15" font-weight="600">MCP server</text>
+    <text x="62" y="286" fill="#8ea1b6" font-size="11.5" font-family="'JetBrains Mono',monospace">6 tools · 4 resources</text>
+    <text x="62" y="302" fill="#8ea1b6" font-size="11.5" font-family="'JetBrains Mono',monospace">stdio transport</text>
+  </g>
+
+  <g>
+    <rect x="300" y="232" width="440" height="86" rx="12" fill="#0f2128" stroke="#3fd0c0" stroke-width="1.5"/>
+    <text x="520" y="266" fill="#eef3f9" font-size="19" font-weight="700" text-anchor="middle">AEGIS AGENT</text>
+    <text x="520" y="290" fill="#a7e8df" font-size="12.5" font-family="'JetBrains Mono',monospace" text-anchor="middle">autonomous loop · perceive → decide → act</text>
+    <text x="520" y="307" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace" text-anchor="middle">Zod-gated LLM output · drift / confidence gates</text>
+  </g>
+  <g>
+    <rect x="300" y="326" width="440" height="30" rx="8" fill="#11161f" stroke="#243042"/>
+    <text x="520" y="345" fill="#8ea1b6" font-size="11.5" font-family="'JetBrains Mono',monospace" text-anchor="middle">@aegis/shared — types · zod schemas · env loader</text>
+  </g>
+
+  <g>
+    <rect x="80" y="408" width="250" height="84" rx="10" fill="#16191c" stroke="#f3b54a"/>
+    <circle cx="313" cy="425" r="4.5" fill="#141c28" stroke="#f3b54a" stroke-width="1.5"/>
+    <text x="98" y="440" fill="#eef3f9" font-size="15" font-weight="600">x402 Oracle</text>
+    <text x="98" y="461" fill="#8ea1b6" font-size="11.5" font-family="'JetBrains Mono',monospace">pay-per-call RWA yields</text>
+    <text x="98" y="478" fill="#8ea1b6" font-size="11.5" font-family="'JetBrains Mono',monospace">Express · MockFacilitator</text>
+  </g>
+  <g>
+    <rect x="395" y="408" width="250" height="84" rx="10" fill="#141c28" stroke="#2a3a4e"/>
+    <text x="413" y="440" fill="#eef3f9" font-size="15" font-weight="600">LLM provider</text>
+    <text x="413" y="461" fill="#8ea1b6" font-size="11.5" font-family="'JetBrains Mono',monospace">Claude default</text>
+    <text x="413" y="478" fill="#8ea1b6" font-size="11.5" font-family="'JetBrains Mono',monospace">OpenAI swap</text>
+  </g>
+  <g>
+    <rect x="710" y="408" width="250" height="84" rx="10" fill="#16191c" stroke="#f3b54a"/>
+    <circle cx="943" cy="425" r="4.5" fill="#141c28" stroke="#f3b54a" stroke-width="1.5"/>
+    <text x="728" y="440" fill="#eef3f9" font-size="15" font-weight="600">CSPR.cloud</text>
+    <text x="728" y="461" fill="#8ea1b6" font-size="11.5" font-family="'JetBrains Mono',monospace">REST + node RPC</text>
+    <text x="728" y="478" fill="#8ea1b6" font-size="11.5" font-family="'JetBrains Mono',monospace">chain gateway</text>
+  </g>
+
+  <g>
+    <rect x="300" y="600" width="210" height="86" rx="10" fill="#16191c" stroke="#f3b54a"/>
+    <circle cx="493" cy="617" r="4.5" fill="#141c28" stroke="#f3b54a" stroke-width="1.5"/>
+    <text x="318" y="631" fill="#eef3f9" font-size="15" font-weight="600">Vault contract</text>
+    <text x="318" y="652" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">Odra · CEP-18 shares</text>
+    <text x="318" y="669" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">deposit·withdraw·reallocate</text>
+  </g>
+  <g>
+    <rect x="540" y="600" width="210" height="86" rx="10" fill="#16191c" stroke="#f3b54a"/>
+    <circle cx="733" cy="617" r="4.5" fill="#141c28" stroke="#f3b54a" stroke-width="1.5"/>
+    <text x="558" y="631" fill="#eef3f9" font-size="15" font-weight="600">Registry contract</text>
+    <text x="558" y="652" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">Odra · reputation</text>
+    <text x="558" y="669" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">register·update·get</text>
+  </g>
+  <g>
+    <rect x="780" y="600" width="170" height="86" rx="10" fill="#141c28" stroke="#2a3a4e"/>
+    <text x="798" y="631" fill="#eef3f9" font-size="15" font-weight="600">cspr.live</text>
+    <text x="798" y="652" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">testnet explorer</text>
+    <text x="798" y="669" fill="#8ea1b6" font-size="11" font-family="'JetBrains Mono',monospace">tx verification</text>
+  </g>
+
+  <g font-size="11" font-family="'JetBrains Mono',monospace" fill="#93a4b8">
+    <line x1="420" y1="143" x2="616" y2="143" stroke="#6b7c90" stroke-width="1.6" marker-end="url(#ag)"/>
+    <text x="518" y="136" text-anchor="middle">sign</text>
+
+    <path d="M300,110 L300,96 L992,96 L992,450 L964,450" fill="none" stroke="#6b7c90" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ag)"/>
+    <text x="640" y="90" text-anchor="middle">poll 15s · read vault / reputation / logs</text>
+
+    <path d="M790,176 L790,300 L804,300 L804,404" fill="none" stroke="#3fd0c0" stroke-width="1.8" marker-end="url(#ac)"/>
+    <text x="812" y="250" text-anchor="start">signed deposit</text>
+
+    <path d="M255,272 L296,272" fill="none" stroke="#6b7c90" stroke-width="1.6" marker-end="url(#ag)"/>
+    <text x="276" y="265" text-anchor="middle">tools</text>
+
+    <path d="M380,318 L380,372 L205,372 L205,404" fill="none" stroke="#f3b54a" stroke-width="1.8" stroke-dasharray="5 4" marker-end="url(#aa)"/>
+    <text x="250" y="392" text-anchor="middle">x402 paid GET</text>
+
+    <path d="M520,356 L520,404" fill="none" stroke="#6b7c90" stroke-width="1.8" marker-end="url(#ag)"/>
+    <text x="528" y="384" text-anchor="start">prompt</text>
+
+    <path d="M700,318 L700,378 L848,378 L848,404" fill="none" stroke="#3fd0c0" stroke-width="1.8" marker-end="url(#ac)"/>
+    <text x="710" y="340" text-anchor="start">signed reallocate / update_reputation</text>
+
+    <path d="M790,492 L790,540 L405,540 L405,596" fill="none" stroke="#3fd0c0" stroke-width="1.8" marker-end="url(#ac)"/>
+    <path d="M850,492 L850,556 L645,556 L645,596" fill="none" stroke="#3fd0c0" stroke-width="1.8" marker-end="url(#ac)"/>
+    <text x="700" y="524" text-anchor="middle" fill="#a7e8df">transactions</text>
+
+    <path d="M752,648 L776,648" fill="none" stroke="#6b7c90" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ag)"/>
+  </g>
+</svg>

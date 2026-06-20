@@ -31,6 +31,11 @@ Aegis is an autonomous on-chain portfolio manager for Casper Network. Every 30 s
 
 ## Architecture
 
+![Aegis system architecture](docs/architecture-diagram.svg)
+
+<details>
+<summary>Mermaid source (same diagram, text form)</summary>
+
 ```mermaid
 flowchart TB
   subgraph Browser["Browser"]
@@ -79,6 +84,8 @@ flowchart TB
   SHARED -. "" .-> MCP
   SHARED -. "" .-> DASH
 ```
+
+</details>
 
 The agent runs a `perceive → decide → act` loop:
 
