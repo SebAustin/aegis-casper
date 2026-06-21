@@ -123,8 +123,9 @@ The mock mode runs the full agent loop with a `MockLlmClient` and `MockFacilitat
 git clone <repo-url> aegis && cd aegis
 pnpm install
 
-# 2. Copy env and leave defaults (mock mode works without any secrets)
+# 2. Copy env and enable the self-contained offline demo (no secrets needed)
 cp .env.example .env
+echo "AGENT_OFFLINE_DEMO=true" >> .env   # full perceive→decide→act cycle, no keys/chain
 
 # 3. Start the oracle (port 4021) — in terminal 1
 pnpm --filter @aegis/oracle start
@@ -140,7 +141,13 @@ pnpm --filter @aegis/dashboard dev
 # Open http://localhost:3000
 ```
 
-> Without `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, the agent falls back to `MockLlmClient` (deterministic allocation, confidence 80). Without `AGENT_PRIVATE_KEY_HEX`, oracle payment uses `mockSign` and on-chain transactions are stub hashes. The full audit log pipeline, x402 mock flow, and dashboard all work in this mode.
+> **`AGENT_OFFLINE_DEMO=true`** is the zero-friction path: the agent uses seeded
+> placeholder chain reads (no CSPR.cloud calls, no rate-limit/quota), a deterministic
+> `MockLlmClient`, and an in-memory mock tx client, so the **full perceive→decide→act
+> cycle completes locally** and the decision feed shows `acted:true` with clearly-marked
+> `mock-reallocate-…` hashes — it never submits on-chain. Leave it `false` (default) to run
+> against real deployed contracts with a funded key + CSPR.cloud key, in which case the agent
+> only performs an on-chain reallocation when chain reads succeed (otherwise it safely backs off).
 
 ### Testnet demo — recovery after RPC rate limits (HTTP 429)
 

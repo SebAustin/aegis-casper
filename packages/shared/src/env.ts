@@ -56,6 +56,18 @@ const envSchema = z.object({
   AGENT_LOOP_INTERVAL_MS: z.coerce.number().int().min(1000).default(30_000),
   /** Localhost HTTP port for dashboard POST /api/trigger → agent /trigger. */
   AGENT_TRIGGER_PORT: z.coerce.number().int().min(1).default(4022),
+  /**
+   * Opt-in self-contained local demo. When true the agent runs the full
+   * perceive→decide→act cycle entirely offline: chain reads return seeded
+   * placeholder state (no CSPR.cloud calls, no quota burn), and ACT is routed
+   * to an in-memory mock tx client that returns clearly-marked `mock-…`
+   * hashes — it NEVER submits a real on-chain transaction. Parsed explicitly
+   * (`true`/`1`) rather than via z.coerce.boolean (which treats "false" as true).
+   */
+  AGENT_OFFLINE_DEMO: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
   REALLOCATION_DRIFT_BPS: z.coerce.number().int().min(0).default(200),
   MIN_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(100).default(60),
   MIN_VAULT_BALANCE_MOTES: z.coerce

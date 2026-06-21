@@ -44,7 +44,9 @@ export class CasperReadClient {
     private readonly vaultContractHash: string | undefined,
     private readonly registryContractHash: string | undefined,
     private readonly nodeRpcUrl: string = "https://node.testnet.cspr.cloud/rpc",
-    private readonly agentAccountHash: string = ""
+    private readonly agentAccountHash: string = "",
+    /** Offline demo: skip all network reads, return seeded placeholder state. */
+    private readonly offlineDemo: boolean = false
   ) {}
 
   // ── Internal helpers ────────────────────────────────────────────────────────
@@ -99,6 +101,11 @@ export class CasperReadClient {
    * not configured or CSPR.cloud is unreachable.
    */
   async getVaultState(): Promise<VaultState> {
+    if (this.offlineDemo) {
+      // No network call, no quota burn, no rate-limit flag — seeded state.
+      return placeholderVaultState();
+    }
+
     const cacheKey = `vault:${this.vaultContractHash}`;
     const cached = this.getCached<VaultState>(cacheKey);
     if (cached) return cached;
@@ -156,6 +163,10 @@ export class CasperReadClient {
     agentAccountHash: string,
     fallbackScore: bigint = 50n
   ): Promise<AgentReputation> {
+    if (this.offlineDemo) {
+      return placeholderReputation(agentAccountHash, fallbackScore);
+    }
+
     const cacheKey = `rep:${agentAccountHash}`;
     const cached = this.getCached<AgentReputation>(cacheKey);
     if (cached) return cached;

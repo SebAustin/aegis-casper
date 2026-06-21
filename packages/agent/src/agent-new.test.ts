@@ -364,3 +364,90 @@ describe("AgentLoop — malformed LLM output never submits on-chain (NFR-S-06)",
     expect(txClient.submittedReallocations).toHaveLength(0);
   });
 });
+
+describe("AgentLoop — offline demo (AGENT_OFFLINE_DEMO)", () => {
+  function makeRateLimitedRead(): CasperReadClient {
+    return {
+      getVaultState: async () => MOCK_VAULT,
+      getReputation: async () => MOCK_REPUTATION,
+      getTransactionStatus: async () => ({ status: "confirmed" as const }),
+      // Signals that perceive reads were rate-limited (placeholder data) —
+      // this blocks the on-chain ACT in production (Gate 7).
+      consumePerceiveRateLimited: () => true,
+    } as unknown as CasperReadClient;
+  }
+
+  const demoLlm: LlmClient = {
+    async decide(): Promise<LlmDecision> {
+      return {
+        allocation: HIGH_DRIFT_ALLOCATION,
+        confidence: 80,
+        rationale: "Offline demo allocation.",
+      };
+    },
+  };
+
+  it("completes the full act cycle locally even when perceive reads are rate-limited", async () => {
+    const txClient = new MockTxClient();
+    const loop = new AgentLoop(makeBaseConfig({ offlineDemo: true }), {
+      casperRead: makeRateLimitedRead(),
+      oracle: makeMockOracle(),
+      llm: demoLlm,
+      tx: txClient,
+    });
+
+    const entry = await loop.runOnce();
+
+    // Offline demo bypasses Gate 7 and acts via the mock tx client.
+    expect(entry.acted).toBe(true);
+    expect(entry.txHash).toMatch(/^mock-reallocate-/);
+    expect(txClient.submittedReallocations).toHaveLength(1);
+  });
+
+  it("PRESERVES the production safety gate: NOT offline + rate-limited reads → skip, no act", async () => {
+    const txClient = new MockTxClient();
+    const loop = new AgentLoop(makeBaseConfig({ offlineDemo: false }), {
+      casperRead: makeRateLimitedRead(),
+      oracle: makeMockOracle(),
+      llm: demoLlm,
+      tx: txClient,
+    });
+
+    const entry = await loop.runOnce();
+
+    expect(entry.acted).toBe(false);
+    expect(entry.skipReason).toBe("rpc_rate_limited");
+    expect(txClient.submittedReallocations).toHaveLength(0);
+  });
+});
+
+describe("AgentLoop — offline demo with unavailable oracle (Gate 6 bypass)", () => {
+  it("acts on the demo oracle snapshot when the live oracle is down", async () => {
+    const throwingOracle = {
+      fetch: async () => {
+        throw new Error("fetch failed");
+      },
+    } as unknown as OracleClient;
+    const txClient = new MockTxClient();
+    const loop = new AgentLoop(makeBaseConfig({ offlineDemo: true }), {
+      casperRead: makeMockCasperRead(),
+      oracle: throwingOracle,
+      llm: {
+        async decide(): Promise<LlmDecision> {
+          return {
+            allocation: HIGH_DRIFT_ALLOCATION,
+            confidence: 80,
+            rationale: "Offline demo, oracle down → demo snapshot.",
+          };
+        },
+      } satisfies LlmClient,
+      tx: txClient,
+    });
+
+    const entry = await loop.runOnce();
+
+    expect(entry.acted).toBe(true);
+    expect(entry.txHash).toMatch(/^mock-reallocate-/);
+    expect(txClient.submittedReallocations).toHaveLength(1);
+  });
+});

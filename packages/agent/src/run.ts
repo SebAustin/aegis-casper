@@ -13,14 +13,35 @@ import {
   mockSign,
   buildRealSigner,
 } from "./clients/oracle-client.js";
-import { CasperTxClient } from "./clients/casper-tx-client.js";
-import { createLlmClient } from "./clients/llm-client.js";
+import { CasperTxClient, MockTxClient } from "./clients/casper-tx-client.js";
+import { createLlmClient, MockLlmClient } from "./clients/llm-client.js";
 import { startTriggerServer } from "./trigger-server.js";
 
 const env = loadEnv();
+const offlineDemo = env.AGENT_OFFLINE_DEMO;
 
-if (!env.AGENT_ACCOUNT_HASH) {
-  throw new Error("AGENT_ACCOUNT_HASH is required to run the agent");
+// In offline-demo mode no real account is touched, so a real account hash is
+// not required — fall back to a clearly-marked demo hash so the loop can run
+// with zero configuration / zero API keys.
+const DEMO_ACCOUNT_HASH =
+  "account-hash-0000000000000000000000000000000000000000000000000000000000000000";
+const agentAccountHash =
+  env.AGENT_ACCOUNT_HASH || (offlineDemo ? DEMO_ACCOUNT_HASH : "");
+
+if (!agentAccountHash) {
+  throw new Error(
+    "AGENT_ACCOUNT_HASH is required to run the agent (or set AGENT_OFFLINE_DEMO=true for a self-contained local demo)"
+  );
+}
+
+if (offlineDemo) {
+  process.stdout.write(
+    JSON.stringify({
+      level: "warn",
+      service: "agent",
+      msg: "AGENT_OFFLINE_DEMO=true — self-contained local demo: placeholder chain reads, mock LLM, MOCK tx client (no real on-chain submission, no API keys required)",
+    }) + "\n"
+  );
 }
 
 const casperRead = new CasperReadClient(
@@ -29,7 +50,8 @@ const casperRead = new CasperReadClient(
   env.VAULT_CONTRACT_HASH,
   env.REGISTRY_CONTRACT_HASH,
   env.CASPER_NODE_RPC_URL,
-  env.AGENT_ACCOUNT_HASH ?? ""
+  agentAccountHash,
+  offlineDemo
 );
 
 // ── Signer resolution ─────────────────────────────────────────────────────────
@@ -79,22 +101,27 @@ if (env.AGENT_PRIVATE_KEY_HEX) {
 const oracle = new OracleClient({
   oracleUrl: env.ORACLE_URL,
   oraclePriceMotes: env.ORACLE_PRICE_MOTES,
-  agentAccountHash: env.AGENT_ACCOUNT_HASH,
+  agentAccountHash: agentAccountHash,
   sign: oracleSign,
 });
 
-const tx = new CasperTxClient({
-  privateKeyHex: env.AGENT_PRIVATE_KEY_HEX ?? "",
-  keyAlgorithm: env.AGENT_KEY_ALGORITHM,
-  accountHash: env.AGENT_ACCOUNT_HASH,
-  nodeRpcUrl: env.CASPER_NODE_RPC_URL,
-  network: env.CASPER_NETWORK,
-  vaultContractHash: env.VAULT_CONTRACT_HASH,
-  registryContractHash: env.REGISTRY_CONTRACT_HASH,
-  csprCloudApiKey: env.CSPR_CLOUD_API_KEY,
-});
+// Offline demo → in-memory mock tx client (never submits on-chain) + mock LLM
+// (deterministic, no API key). Otherwise the real casper-js-sdk tx client and
+// the configured LLM provider.
+const tx = offlineDemo
+  ? new MockTxClient()
+  : new CasperTxClient({
+      privateKeyHex: env.AGENT_PRIVATE_KEY_HEX ?? "",
+      keyAlgorithm: env.AGENT_KEY_ALGORITHM,
+      accountHash: agentAccountHash,
+      nodeRpcUrl: env.CASPER_NODE_RPC_URL,
+      network: env.CASPER_NETWORK,
+      vaultContractHash: env.VAULT_CONTRACT_HASH,
+      registryContractHash: env.REGISTRY_CONTRACT_HASH,
+      csprCloudApiKey: env.CSPR_CLOUD_API_KEY,
+    });
 
-const llm = createLlmClient(env);
+const llm = offlineDemo ? new MockLlmClient() : createLlmClient(env);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "../../..");
@@ -108,9 +135,10 @@ const loop = new AgentLoop(
     txConfirmTimeoutMs: env.TX_CONFIRM_TIMEOUT_MS,
     reputationUpdateEpochs: env.REPUTATION_UPDATE_EPOCHS,
     reputationSeedScore: BigInt(env.REPUTATION_SEED_SCORE),
-    agentAccountHash: env.AGENT_ACCOUNT_HASH,
+    agentAccountHash: agentAccountHash,
     decisionsLogPath: path.join(repoRoot, "logs", "decisions.jsonl"),
     paymentsLogPath: path.join(repoRoot, "logs", "payments.jsonl"),
+    offlineDemo,
   },
   { casperRead, oracle, llm, tx }
 );
@@ -122,8 +150,9 @@ process.stdout.write(
     msg: "Agent starting",
     interval_ms: env.AGENT_LOOP_INTERVAL_MS,
     env_file: getRepoDotEnvPath() ?? "none",
-    account: env.AGENT_ACCOUNT_HASH,
-    llmProvider: env.LLM_PROVIDER,
+    account: agentAccountHash,
+    llmProvider: offlineDemo ? "mock (offline demo)" : env.LLM_PROVIDER,
+    offlineDemo,
   }) + "\n"
 );
 

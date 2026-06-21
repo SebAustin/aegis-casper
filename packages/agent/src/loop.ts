@@ -48,6 +48,14 @@ export interface AgentConfig {
   agentAccountHash: string;
   decisionsLogPath: string;
   paymentsLogPath: string;
+  /**
+   * Self-contained offline demo (env AGENT_OFFLINE_DEMO). When true the loop
+   * never enters the RPC rate-limit cooldown and bypasses the
+   * "don't act on placeholder reads" gate, so the full cycle completes locally
+   * against the injected mock tx client. The production default (false)
+   * preserves the verified safety behaviour exactly.
+   */
+  offlineDemo?: boolean;
 }
 
 export interface AgentClients {
@@ -129,7 +137,7 @@ export class AgentLoop {
         skipReason: "prior_iteration_running",
       };
     }
-    if (Date.now() < this.rateLimitedUntil) {
+    if (!this.config.offlineDemo && Date.now() < this.rateLimitedUntil) {
       return {
         iteration: this.iteration,
         timestamp: Date.now(),
@@ -163,7 +171,7 @@ export class AgentLoop {
       return;
     }
 
-    if (Date.now() < this.rateLimitedUntil) {
+    if (!this.config.offlineDemo && Date.now() < this.rateLimitedUntil) {
       process.stdout.write(
         JSON.stringify({
           level: "warn",
@@ -418,13 +426,19 @@ export class AgentLoop {
       };
     }
 
-    // Gate 6: Live oracle required before on-chain act
-    if (oracleUnavailable) {
+    // Gate 6: Live oracle required before on-chain act.
+    // In offline-demo mode the deterministic demo oracle snapshot is the
+    // intended data source, so a missing live oracle does not block the act.
+    if (!this.config.offlineDemo && oracleUnavailable) {
       return { ...partialEntry, skipReason: "oracle_unavailable" };
     }
 
-    // Gate 7: RPC rate limit — skip on-chain act to avoid retry storms
-    if (this.clients.casperRead.consumePerceiveRateLimited()) {
+    // Gate 7: RPC rate limit — skip on-chain act to avoid retry storms and to
+    // never submit a real reallocation computed from placeholder reads.
+    // In offline-demo mode there are no live reads (placeholder by design) and
+    // the tx client is a mock, so this safety gate is intentionally bypassed.
+    const perceiveRateLimited = this.clients.casperRead.consumePerceiveRateLimited();
+    if (!this.config.offlineDemo && perceiveRateLimited) {
       this.rateLimitedUntil = Date.now() + 90_000;
       return { ...partialEntry, skipReason: "rpc_rate_limited" };
     }
