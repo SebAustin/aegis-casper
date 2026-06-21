@@ -163,7 +163,7 @@ If the dashboard shows **STALE** badges, reputation as **"—"**, or the agent l
      && pnpm agent                                # terminal 2
    pnpm dev                                       # terminal 3 — restart so API routes reload
    ```
-4. Set `AGENT_LOOP_INTERVAL_MS=120000` in `.env` during demos to reduce RPC churn.
+4. For demos, prefer **`AGENT_OFFLINE_DEMO=true`** (zero cspr.cloud calls). For a live *online* run, keep `AGENT_LOOP_INTERVAL_MS` at the default `900000` (15 min) — shorter cadences (e.g. 30000) exhaust the free-tier 1200/day quota and the agent will warn at startup.
 5. Avoid rapid manual **Trigger Agent Run** clicks — wait for one iteration to finish.
 
 Ensure `packages/dashboard/.env.local` includes `CASPER_NODE_RPC_URL` and `REPUTATION_SEED_SCORE=50` so vault/reputation API routes fast-fail to fallback data instead of hanging.
@@ -200,7 +200,7 @@ Copy `.env.example` to `.env`. All values have sensible defaults for mock/local 
 | `ORACLE_PRICE_MOTES` | `1000000` | Oracle | 0.001 CSPR per oracle call |
 | `X402_FACILITATOR` | `mock` | Payment | `mock` or `live` |
 | `X402_FACILITATOR_URL` | — | Live x402 | Live facilitator endpoint |
-| `AGENT_LOOP_INTERVAL_MS` | `30000` | Agent | Loop cadence (30s for demo) |
+| `AGENT_LOOP_INTERVAL_MS` | `900000` | Agent | Loop cadence. Default 15min keeps online runs under the cspr.cloud free-tier quota (~1200/day); offline demo auto-runs ~15s |
 | `REALLOCATION_DRIFT_BPS` | `200` | Agent | Min drift to trigger reallocation |
 | `MIN_CONFIDENCE_THRESHOLD` | `60` | Agent | LLM confidence gate |
 | `MIN_VAULT_BALANCE_MOTES` | `100000000000` | Agent | 100 CSPR minimum |
