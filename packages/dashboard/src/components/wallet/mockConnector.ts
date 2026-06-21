@@ -29,16 +29,16 @@ function delay(ms: number): Promise<void> {
 
 export const mockConnector: WalletConnector = {
   async connect() {
-    await delay(1_200); // Simulate extension handshake.
+    await delay(400);
     return MOCK_ACCOUNT_HASH;
   },
 
   async disconnect() {
-    await delay(200);
+    await delay(100);
   },
 
   async getBalance(_accountHash: string) {
-    await delay(400);
+    await delay(150);
     return MOCK_BALANCE_MOTES;
   },
 

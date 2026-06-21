@@ -76,6 +76,7 @@ function makeClient(mockRpcFactory: () => { putTransaction: (tx: SdkTransaction)
   return new CasperTxClient(
     {
       privateKeyHex: signingKeyHex,
+      keyAlgorithm: "ed25519",
       accountHash: AGENT_ACCOUNT_HASH,
       nodeRpcUrl: "http://localhost:7777/rpc",
       network: NETWORK,
@@ -93,9 +94,10 @@ describe("buildReallocateTx", () => {
     expect(tx.entryPoint.customEntryPoint).toBe("reallocate");
   });
 
-  it("targets the configured vault contract by hash", () => {
+  it("targets the configured vault package by hash", () => {
     const tx = buildReallocateTx(sdk, VAULT_HASH, NETWORK, ALLOCATION, agentPublicKey);
-    expect(tx.target.stored?.id?.byHash?.toHex()).toBe(VAULT_HASH);
+    const hashBytes = tx.target.stored?.id?.byPackageHash?.addr?.hashBytes;
+    expect(Buffer.from(hashBytes!).toString("hex")).toBe(VAULT_HASH);
   });
 
   it("serializes the allocation as a single `allocation` runtime arg", () => {
@@ -135,7 +137,8 @@ describe("buildUpdateReputationTx", () => {
     );
     const keys = [...tx.args.args.keys()].sort();
     expect(keys).toEqual(["agent", "delta", "rationale_hash"]);
-    expect(tx.target.stored?.id?.byHash?.toHex()).toBe(REGISTRY_HASH);
+    const hashBytes = tx.target.stored?.id?.byPackageHash?.addr?.hashBytes;
+    expect(Buffer.from(hashBytes!).toString("hex")).toBe(REGISTRY_HASH);
   });
 });
 

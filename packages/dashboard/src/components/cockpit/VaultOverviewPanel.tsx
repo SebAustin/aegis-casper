@@ -20,18 +20,27 @@ interface Props {
   status: PollStatus;
   error: string | null;
   lastUpdatedMs: number | null;
+  dataWarning?: string;
 }
 
 /**
  * DESIGN.md §6.3 — Vault Overview Panel.
  * FR-D-01, FR-D-05.
  */
-export function VaultOverviewPanel({ data, status, error, lastUpdatedMs }: Props) {
+export function VaultOverviewPanel({
+  data,
+  status,
+  error,
+  lastUpdatedMs,
+  dataWarning,
+}: Props) {
   const [modalMode, setModalMode] = useState<"deposit" | "withdraw" | null>(null);
 
   const isLoading = status === "idle" || status === "loading";
+  const isRateLimited = dataWarning === "rate_limited";
   const isStale =
-    lastUpdatedMs !== null && Date.now() - lastUpdatedMs > 60_000;
+    isRateLimited ||
+    (lastUpdatedMs !== null && Date.now() - lastUpdatedMs > 60_000);
 
   const vaultStatus = data?.paused
     ? "paused"
@@ -68,8 +77,25 @@ export function VaultOverviewPanel({ data, status, error, lastUpdatedMs }: Props
         <h2 id="vault-heading" className="panel-label">
           Vault Balance
         </h2>
-        <StatusChip variant={vaultStatus as "live" | "paused" | "stale"} />
+        <StatusChip
+          variant={vaultStatus as "live" | "paused" | "stale"}
+          label={isRateLimited ? "RATE LIMITED" : undefined}
+        />
       </div>
+
+      {isRateLimited && (
+        <p
+          role="status"
+          style={{
+            fontSize: "var(--text-xs)",
+            color: "var(--color-warning)",
+            marginBottom: "var(--space-3)",
+            lineHeight: 1.4,
+          }}
+        >
+          CSPR.cloud rate limited — showing cached or fallback vault data.
+        </p>
+      )}
 
       {/* Balance hero number */}
       <output

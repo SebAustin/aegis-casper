@@ -9,6 +9,7 @@ import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
 
 interface Props {
   data: RwaOracleData | null;
+  dataSource?: string;
   status: PollStatus;
   error: string | null;
 }
@@ -17,8 +18,10 @@ interface Props {
  * DESIGN.md §6.8 — Oracle / x402 Panel.
  * FR-D-04.
  */
-export function OraclePanel({ data, status, error }: Props) {
+export function OraclePanel({ data, dataSource, status, error }: Props) {
   const isLoading = (status === "idle" || status === "loading") && !data;
+  const isOfflineSource =
+    dataSource === "demo" || dataSource === "payments-log";
 
   const freshness = data
     ? Date.now() - data.timestamp
@@ -54,6 +57,29 @@ export function OraclePanel({ data, status, error }: Props) {
         </div>
         <StatusChip variant={freshnessVariant as "fresh" | "aging" | "stale"} />
       </div>
+
+      {isOfflineSource && (
+        <p
+          role="status"
+          style={{
+            fontSize: "var(--text-xs)",
+            color: "var(--color-warning)",
+            marginBottom: "var(--space-3)",
+            padding: "var(--space-2) var(--space-3)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--color-warning-10, rgba(234, 179, 8, 0.08))",
+            border: "1px solid var(--color-warning)",
+            lineHeight: 1.45,
+          }}
+        >
+          Oracle service offline — showing{" "}
+          {dataSource === "payments-log" ? "cached payment" : "demo"} yields.
+          Run <code style={{ fontFamily: "var(--font-mono)" }}>pnpm oracle</code>{" "}
+          (port 4021), then refresh. Agent needs oracle before{" "}
+          <code style={{ fontFamily: "var(--font-mono)" }}>pnpm agent</code> for
+          live x402 data.
+        </p>
+      )}
 
       {error && (
         <p

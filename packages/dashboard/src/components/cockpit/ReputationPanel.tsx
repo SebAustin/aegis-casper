@@ -10,6 +10,7 @@ interface Props {
   data: AgentReputation | null;
   status: PollStatus;
   error: string | null;
+  dataWarning?: string;
 }
 
 const MAX_SCORE = 1000;
@@ -28,9 +29,10 @@ const ARC_CIRCUMFERENCE = Math.PI * GAUGE_R; // half-circle arc length
  *
  * Accessibility: role="meter" on the gauge.
  */
-export function ReputationPanel({ data, status, error }: Props) {
+export function ReputationPanel({ data, status, error, dataWarning }: Props) {
   const reduced = useReducedMotion();
   const isLoading = (status === "idle" || status === "loading") && !data;
+  const isRateLimited = dataWarning === "rate_limited";
 
   const score = data ? Number(data.score) : 0;
   const totalDecisions = data ? Number(data.totalDecisions) : 0;
@@ -65,6 +67,21 @@ export function ReputationPanel({ data, status, error }: Props) {
       <h2 id="rep-heading" className="panel-label" style={{ alignSelf: "flex-start" }}>
         Agent Reputation
       </h2>
+
+      {isRateLimited && (
+        <p
+          role="status"
+          style={{
+            fontSize: "var(--text-xs)",
+            color: "var(--color-warning)",
+            marginBottom: "var(--space-2)",
+            alignSelf: "flex-start",
+            lineHeight: 1.4,
+          }}
+        >
+          CSPR.cloud rate limited — showing seed or cached score.
+        </p>
+      )}
 
       {/* Arc Gauge */}
       <div

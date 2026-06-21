@@ -1,6 +1,8 @@
 {
-  "vault_contract_hash": "",
-  "registry_contract_hash": "",
+  "vault_contract_hash": "hash-efec07b9288855ba750e3401e68b111a8a019b3052716f9e3059808d26932d31",
+  "vault_deploy_hash": "019c30977ab6fa082d78565c45df6a210ba7400d82c2073af34f7f4e148a4769",
+  "registry_contract_hash": "hash-e1523b014cebc6baa1e4494423e53ae3794ccd790bf7c656df292dde19d865fe",
+  "registry_deploy_hash": "a20329862d2e7a7a82f560b834b5a09da0c076844dd325ea8a9d608b78249e2d",
   "network": "casper-test",
-  "deployed_at": ""
+  "deployed_at": "2026-06-21T14:31:33.446Z"
 }

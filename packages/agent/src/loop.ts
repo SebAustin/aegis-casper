@@ -21,8 +21,10 @@ import {
   appendJsonl,
   readJsonl,
   allocationSanityCheck,
+  buildDemoOracleSnapshot,
   driftBps,
   llmDecisionSchema,
+  normalizeDecisionLogEntry,
 } from "@aegis/shared";
 import type {
   DecisionLogEntry,
@@ -42,6 +44,7 @@ export interface AgentConfig {
   maxAssetWeightBps: number;
   txConfirmTimeoutMs: number;
   reputationUpdateEpochs: number;
+  reputationSeedScore: bigint;
   agentAccountHash: string;
   decisionsLogPath: string;
   paymentsLogPath: string;
@@ -59,12 +62,28 @@ export interface AgentClients {
 export class AgentLoop {
   private iteration = 0;
   private running = false;
+  private rateLimitedUntil = 0;
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private readonly config: AgentConfig,
     private readonly clients: AgentClients
   ) {}
+
+  /** True while the loop is in post-429 cooldown (no on-chain act). */
+  isInRpcCooldown(): boolean {
+    return Date.now() < this.rateLimitedUntil;
+  }
+
+  /** Milliseconds remaining in RPC cooldown, or 0. */
+  getRpcCooldownRemainingMs(): number {
+    return Math.max(0, this.rateLimitedUntil - Date.now());
+  }
+
+  /** True while a single iteration (perceive → act) is in flight. */
+  isIterationRunning(): boolean {
+    return this.running;
+  }
 
   /**
    * Start the continuous loop at the given interval.
@@ -96,6 +115,34 @@ export class AgentLoop {
    * Run a single iteration (exposed for dashboard "Trigger" + MCP tool).
    */
   async runOnce(): Promise<DecisionLogEntry> {
+    if (this.running) {
+      return {
+        iteration: this.iteration,
+        timestamp: Date.now(),
+        promptHash: "",
+        oracleSnapshotHash: "",
+        recommendedAllocation: [],
+        confidence: 0,
+        rationale: "",
+        acted: false,
+        txHash: null,
+        skipReason: "prior_iteration_running",
+      };
+    }
+    if (Date.now() < this.rateLimitedUntil) {
+      return {
+        iteration: this.iteration,
+        timestamp: Date.now(),
+        promptHash: "",
+        oracleSnapshotHash: "",
+        recommendedAllocation: [],
+        confidence: 0,
+        rationale: "",
+        acted: false,
+        txHash: null,
+        skipReason: "rpc_rate_limited: wait before retrying",
+      };
+    }
     return this.iterate();
   }
 
@@ -111,6 +158,19 @@ export class AgentLoop {
           iteration: this.iteration,
           msg: "Tick skipped — prior iteration still running",
           skipReason: "prior_iteration_running",
+        }) + "\n"
+      );
+      return;
+    }
+
+    if (Date.now() < this.rateLimitedUntil) {
+      process.stdout.write(
+        JSON.stringify({
+          level: "warn",
+          service: "agent",
+          iteration: this.iteration,
+          msg: "Tick skipped — CSPR.cloud RPC rate limit cooldown",
+          skipReason: "rpc_rate_limited",
         }) + "\n"
       );
       return;
@@ -170,6 +230,9 @@ export class AgentLoop {
         txHash: null,
         skipReason: `iteration_error: ${String(err)}`,
       };
+      if (String(err).includes("429")) {
+        this.rateLimitedUntil = Date.now() + 90_000;
+      }
       process.stdout.write(
         JSON.stringify({
           level: "error",
@@ -185,7 +248,10 @@ export class AgentLoop {
     }
 
     // Log the decision entry (always, even on skip/error)
-    await appendJsonl(this.config.decisionsLogPath, entry);
+    await appendJsonl(
+      this.config.decisionsLogPath,
+      normalizeDecisionLogEntry(entry)
+    );
 
     process.stdout.write(
       JSON.stringify({
@@ -214,19 +280,33 @@ export class AgentLoop {
   ): Promise<DecisionLogEntry> {
     // ── PERCEIVE ────────────────────────────────────────────────────────────
 
-    const [vaultState, reputation, oracleData] = await Promise.all([
-      this.clients.casperRead.getVaultState(),
-      this.clients.casperRead.getReputation(this.config.agentAccountHash),
-      this.clients.oracle.fetch(),
-    ]);
+    const vaultState = await this.clients.casperRead.getVaultState();
+    const reputation = await this.clients.casperRead.getReputation(
+      this.config.agentAccountHash,
+      this.config.reputationSeedScore
+    );
+
+    let oracleUnavailable = false;
+    let oracleData;
+    try {
+      oracleData = await this.clients.oracle.fetch();
+    } catch (err) {
+      oracleUnavailable = true;
+      process.stderr.write(
+        `[agent/oracle] fetch failed (${String(err)}) — using demo snapshot\n`
+      );
+      oracleData = buildDemoOracleSnapshot(this.config.agentAccountHash);
+    }
 
     // Log payment receipt to payments.jsonl BEFORE decision entry (SC-04)
-    await appendJsonl(this.config.paymentsLogPath, {
-      timestamp: Date.now(),
-      iteration: iter,
-      receipt: oracleData.paymentReceipt,
-      callerAccountHash: this.config.agentAccountHash,
-    });
+    if (!oracleUnavailable) {
+      await appendJsonl(this.config.paymentsLogPath, {
+        timestamp: Date.now(),
+        iteration: iter,
+        receipt: oracleData.paymentReceipt,
+        callerAccountHash: this.config.agentAccountHash,
+      });
+    }
 
     const oracleSnapshotHash = hashObject(oracleData.assets);
 
@@ -338,6 +418,17 @@ export class AgentLoop {
       };
     }
 
+    // Gate 6: Live oracle required before on-chain act
+    if (oracleUnavailable) {
+      return { ...partialEntry, skipReason: "oracle_unavailable" };
+    }
+
+    // Gate 7: RPC rate limit — skip on-chain act to avoid retry storms
+    if (this.clients.casperRead.consumePerceiveRateLimited()) {
+      this.rateLimitedUntil = Date.now() + 90_000;
+      return { ...partialEntry, skipReason: "rpc_rate_limited" };
+    }
+
     // ── ACT (non-blocking confirmation, PLAN §2.4) ───────────────────────────
 
     process.stdout.write(
@@ -374,7 +465,7 @@ export class AgentLoop {
     timeoutMs: number
   ): Promise<void> {
     const deadline = Date.now() + timeoutMs;
-    const pollInterval = 3_000;
+    const pollInterval = 10_000;
 
     while (Date.now() < deadline) {
       await sleep(pollInterval);

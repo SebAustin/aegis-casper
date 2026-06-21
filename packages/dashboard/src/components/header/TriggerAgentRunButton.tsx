@@ -1,38 +1,138 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { dispatchAgentTrigger } from "@/lib/trigger-events";
+import { formatCountdown } from "@/lib/format";
 
 type TriggerState = "idle" | "loading" | "success" | "error";
 
+interface AgentStatus {
+  reachable: boolean;
+  iterationRunning: boolean;
+  inRpcCooldown: boolean;
+  rpcCooldownRemainingMs: number;
+}
+
 /**
  * DESIGN.md §6.9 — Trigger Agent Run control.
- * Outlined cyan, play icon. On 1024px: icon-only.
+ * Outlined cyan, play icon. Shows a fixed toast so feedback is obvious.
  */
 export function TriggerAgentRunButton() {
   const [state, setState] = useState<TriggerState>("idle");
   const [errorMsg, setErrorMsg] = useState<string>("");
+  const [toast, setToast] = useState<string | null>(null);
+  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
+  const [cooldownTick, setCooldownTick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const pollStatus = async () => {
+      try {
+        const res = await fetch("/api/agent-status", { cache: "no-store" });
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as AgentStatus;
+        if (!cancelled) setAgentStatus(body);
+      } catch {
+        if (!cancelled) {
+          setAgentStatus({
+            reachable: false,
+            iterationRunning: false,
+            inRpcCooldown: false,
+            rpcCooldownRemainingMs: 0,
+          });
+        }
+      }
+    };
+
+    void pollStatus();
+    const id = window.setInterval(() => void pollStatus(), 3_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!agentStatus?.inRpcCooldown || agentStatus.rpcCooldownRemainingMs <= 0) {
+      return;
+    }
+    const id = window.setInterval(() => setCooldownTick((n) => n + 1), 1_000);
+    return () => window.clearInterval(id);
+  }, [agentStatus?.inRpcCooldown, agentStatus?.rpcCooldownRemainingMs]);
+
+  void cooldownTick;
+
+  const cooldownMs = agentStatus?.rpcCooldownRemainingMs ?? 0;
+  const inCooldown = agentStatus?.inRpcCooldown === true && cooldownMs > 0;
+  const agentUnreachable = agentStatus?.reachable === false;
+  const agentBusy = agentStatus?.iterationRunning === true;
+
+  const showToast = (message: string, ms = 5000) => {
+    setToast(message);
+    window.setTimeout(() => setToast(null), ms);
+  };
 
   const handleTrigger = async () => {
-    if (state === "loading") return;
+    if (state === "loading" || inCooldown || agentBusy) return;
     setState("loading");
     setErrorMsg("");
+    showToast("Starting agent run…", 8000);
 
     try {
       const res = await fetch("/api/trigger", { method: "POST" });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? "Trigger failed");
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        cooldownRemainingMs?: number;
+      };
+
+      if (res.status === 503) {
+        const msg =
+          body.error ??
+          "Agent is in RPC cooldown — wait before triggering again.";
+        setErrorMsg(msg);
+        setState("error");
+        showToast(msg, 8000);
+        if (typeof body.cooldownRemainingMs === "number") {
+          setAgentStatus((prev) =>
+            prev
+              ? { ...prev, inRpcCooldown: true, rpcCooldownRemainingMs: body.cooldownRemainingMs! }
+              : {
+                  reachable: true,
+                  iterationRunning: false,
+                  inRpcCooldown: true,
+                  rpcCooldownRemainingMs: body.cooldownRemainingMs!,
+                }
+          );
+        }
+        window.setTimeout(() => setState("idle"), 4000);
+        return;
       }
+
+      if (!res.ok) {
+        throw new Error(body.error ?? `Trigger failed (${res.status})`);
+      }
+
       setState("success");
-      setTimeout(() => setState("idle"), 2000);
+      dispatchAgentTrigger();
+      showToast(
+        "Agent run started — check Decision Feed for the new entry.",
+        6000
+      );
+
+      const feed = document.getElementById("feed-heading");
+      feed?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+      window.setTimeout(() => setState("idle"), 3000);
     } catch (err: unknown) {
       const msg =
         err instanceof Error
           ? err.message
-          : "Agent run failed to start. Check that the agent process is running.";
+          : "Agent run failed. Is `pnpm agent` running?";
       setErrorMsg(msg);
       setState("error");
-      setTimeout(() => setState("idle"), 3000);
+      showToast(msg, 8000);
+      window.setTimeout(() => setState("idle"), 4000);
     }
   };
 
@@ -52,51 +152,113 @@ export function TriggerAgentRunButton() {
 
   const label =
     state === "loading"
-      ? "Running…"
+      ? "Trigger sent…"
       : state === "success"
       ? "Done"
       : state === "error"
       ? "Failed"
+      : inCooldown
+      ? `Cooldown ${formatCountdown(cooldownMs)}`
+      : agentBusy
+      ? "Agent busy…"
+      : agentUnreachable
+      ? "Agent offline"
       : "Trigger Agent Run";
 
+  const triggerDisabled =
+    state === "loading" || inCooldown || agentBusy || agentUnreachable;
+
+  const helperTitle = inCooldown
+    ? `RPC cooldown — on-chain reads were rate-limited. Retry in ${formatCountdown(cooldownMs)}.`
+    : agentUnreachable
+    ? "Start the agent with `pnpm agent` (after `pnpm oracle`)."
+    : agentBusy
+    ? "Waiting for the current iteration to finish."
+    : state === "error"
+    ? errorMsg
+    : undefined;
+
   return (
-    <button
-      type="button"
-      onClick={handleTrigger}
-      disabled={state === "loading"}
-      aria-label="Trigger immediate agent run"
-      aria-busy={state === "loading" || undefined}
-      title={state === "error" ? errorMsg : undefined}
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: "var(--space-2)",
-        height: "36px",
-        padding: "0 var(--space-3)",
-        border: `1px solid ${borderColor}`,
-        borderRadius: "var(--radius-md)",
-        background: "var(--color-accent-cyan-10)",
-        color: textColor,
-        fontFamily: "var(--font-body)",
-        fontSize: "var(--text-sm)",
-        fontWeight: "var(--weight-medium)",
-        cursor: state === "loading" ? "not-allowed" : "pointer",
-        opacity: state === "loading" ? 0.7 : 1,
-        transition: "box-shadow var(--duration-fast), opacity var(--duration-fast)",
-        minHeight: "44px",
-      }}
-    >
-      {state === "loading" ? (
-        <SpinnerIcon color={textColor} />
-      ) : state === "success" ? (
-        <CheckIcon />
-      ) : state === "error" ? (
-        <XIcon />
-      ) : (
-        <PlayIcon />
+    <>
+      <button
+        type="button"
+        onClick={() => void handleTrigger()}
+        disabled={triggerDisabled}
+        aria-label={
+          state === "error" && errorMsg
+            ? `Trigger failed: ${errorMsg}`
+            : helperTitle ?? "Trigger immediate agent run"
+        }
+        aria-busy={state === "loading" || agentBusy || undefined}
+        title={helperTitle}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "var(--space-2)",
+          height: "36px",
+          padding: "0 var(--space-3)",
+          border: `1px solid ${borderColor}`,
+          borderRadius: "var(--radius-md)",
+          background: "var(--color-accent-cyan-10)",
+          color: textColor,
+          fontFamily: "var(--font-body)",
+          fontSize: "var(--text-sm)",
+          fontWeight: "var(--weight-medium)",
+          cursor: triggerDisabled ? "not-allowed" : "pointer",
+          opacity: triggerDisabled ? 0.7 : 1,
+          transition: "box-shadow var(--duration-fast), opacity var(--duration-fast)",
+          minHeight: "44px",
+        }}
+      >
+        {state === "loading" ? (
+          <SpinnerIcon color={textColor} />
+        ) : state === "success" ? (
+          <CheckIcon />
+        ) : state === "error" ? (
+          <XIcon />
+        ) : (
+          <PlayIcon />
+        )}
+        <span className="trigger-label trigger-label--long">{label}</span>
+        <span className="trigger-label trigger-label--short">
+          {state === "loading"
+            ? "…"
+            : state === "success"
+            ? "✓"
+            : state === "error"
+            ? "!"
+            : "Run"}
+        </span>
+      </button>
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position: "fixed",
+            bottom: "var(--space-6)",
+            right: "var(--space-6)",
+            zIndex: 500,
+            maxWidth: "min(360px, calc(100vw - 2 * var(--space-6)))",
+            padding: "var(--space-3) var(--space-4)",
+            borderRadius: "var(--radius-md)",
+            border: `1px solid ${
+              state === "error"
+                ? "var(--color-danger)"
+                : "var(--color-accent-cyan)"
+            }`,
+            background: "var(--color-bg-overlay)",
+            color: "var(--color-text-primary)",
+            fontSize: "var(--text-sm)",
+            boxShadow: "var(--shadow-lg)",
+            lineHeight: 1.4,
+          }}
+        >
+          {toast}
+        </div>
       )}
-      <span className="trigger-label">{label}</span>
-    </button>
+    </>
   );
 }
 

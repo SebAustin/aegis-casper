@@ -9,31 +9,53 @@ interface UsePollResult<T> {
   status: PollStatus;
   error: string | null;
   lastUpdatedMs: number | null;
-  /** Milliseconds until next poll (0–15000). */
+  /** Milliseconds until next poll. */
   countdown: number;
   refetch: () => void;
 }
 
-const POLL_INTERVAL_MS = 15_000;
+export interface UsePollerOptions {
+  /** Poll interval in ms (default 15_000). */
+  intervalMs?: number;
+  /** Skip a tick while a prior fetch is still in flight (default true). */
+  skipOverlapping?: boolean;
+}
+
+const DEFAULT_INTERVAL_MS = 15_000;
 
 /**
- * Polls `fetchFn` every 15 seconds (FR-D-06).
- * Tolerates fetch errors — returns last known data with error message.
+ * Polls `fetchFn` on an interval (FR-D-06).
+ * Tolerates fetch errors — keeps last known data when a refresh fails.
  */
-export function usePoller<T>(fetchFn: () => Promise<T>): UsePollResult<T> {
+export function usePoller<T>(
+  fetchFn: () => Promise<T>,
+  options: UsePollerOptions = {}
+): UsePollResult<T> {
+  const intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
+  const skipOverlapping = options.skipOverlapping ?? true;
+
   const [data, setData] = useState<T | null>(null);
   const [status, setStatus] = useState<PollStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [lastUpdatedMs, setLastUpdatedMs] = useState<number | null>(null);
-  const [countdown, setCountdown] = useState(POLL_INTERVAL_MS);
+  const [countdown, setCountdown] = useState(intervalMs);
 
   const fetchFnRef = useRef(fetchFn);
   fetchFnRef.current = fetchFn;
 
   const lastFetchRef = useRef<number>(0);
+  const inFlightRef = useRef(false);
+  const dataRef = useRef<T | null>(null);
+  dataRef.current = data;
 
   const doFetch = useCallback(async () => {
-    setStatus((prev) => (prev === "idle" ? "loading" : prev));
+    if (skipOverlapping && inFlightRef.current) return;
+
+    inFlightRef.current = true;
+    setStatus((prev) =>
+      prev === "idle" && dataRef.current === null ? "loading" : prev
+    );
+
     try {
       const result = await fetchFnRef.current();
       setData(result);
@@ -45,9 +67,15 @@ export function usePoller<T>(fetchFn: () => Promise<T>): UsePollResult<T> {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       setError(message);
-      setStatus("error");
+      if (dataRef.current === null) {
+        setStatus("error");
+      } else {
+        setStatus("success");
+      }
+    } finally {
+      inFlightRef.current = false;
     }
-  }, []);
+  }, [skipOverlapping]);
 
   // Initial fetch on mount.
   useEffect(() => {
@@ -57,20 +85,21 @@ export function usePoller<T>(fetchFn: () => Promise<T>): UsePollResult<T> {
   // Polling interval.
   useEffect(() => {
     const id = setInterval(() => {
+      if (skipOverlapping && inFlightRef.current) return;
       void doFetch();
-    }, POLL_INTERVAL_MS);
+    }, intervalMs);
     return () => clearInterval(id);
-  }, [doFetch]);
+  }, [doFetch, intervalMs, skipOverlapping]);
 
   // Countdown tick (updates every second for the progress bar).
   useEffect(() => {
     const id = setInterval(() => {
       const elapsed = Date.now() - (lastFetchRef.current || Date.now());
-      const remaining = Math.max(0, POLL_INTERVAL_MS - elapsed);
+      const remaining = Math.max(0, intervalMs - elapsed);
       setCountdown(remaining);
     }, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [intervalMs]);
 
   return { data, status, error, lastUpdatedMs, countdown, refetch: doFetch };
 }

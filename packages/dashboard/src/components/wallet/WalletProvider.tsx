@@ -1,28 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
 import { WalletContext } from "./WalletContext";
 import type { WalletConnector, WalletState } from "./WalletContext";
 import { mockConnector } from "./mockConnector";
-import { csprClickConnector } from "./csprClickConnector";
-
-/**
- * Connector selection (SC-09):
- *   - Default in the browser is the REAL CSPR.click connector (Casper Wallet).
- *   - The mock connector is an explicit headless / CI fallback, selected when
- *     `NEXT_PUBLIC_USE_MOCK_WALLET=true`, or when there is no `window`
- *     (server-side render / non-browser environments).
- */
-function selectConnector(): WalletConnector {
-  const forceMock = process.env["NEXT_PUBLIC_USE_MOCK_WALLET"] === "true";
-  if (forceMock || typeof window === "undefined") {
-    return mockConnector;
-  }
-  return csprClickConnector;
-}
-
-const connector = selectConnector();
+import { selectWalletConnector } from "./selectConnector";
 
 interface Props {
   children: ReactNode;
@@ -30,7 +13,13 @@ interface Props {
 }
 
 export function WalletProvider({ children }: Props) {
+  const [connector, setConnector] = useState<WalletConnector>(mockConnector);
   const [state, setState] = useState<WalletState>({ status: "disconnected" });
+
+  // Resolve connector on the client after mount (never at SSR module scope).
+  useEffect(() => {
+    setConnector(selectWalletConnector());
+  }, []);
 
   const connect = useCallback(async () => {
     setState({ status: "connecting" });
@@ -45,12 +34,12 @@ export function WalletProvider({ children }: Props) {
           : "Connection declined. Check that Casper Wallet is unlocked.";
       setState({ status: "error", message });
     }
-  }, []);
+  }, [connector]);
 
   const disconnect = useCallback(async () => {
     await connector.disconnect();
     setState({ status: "disconnected" });
-  }, []);
+  }, [connector]);
 
   const signAndDeploy = useCallback(
     async (deployJson: unknown): Promise<string> => {
@@ -59,7 +48,7 @@ export function WalletProvider({ children }: Props) {
       }
       return connector.signAndDeploy(deployJson);
     },
-    [state]
+    [connector, state]
   );
 
   return (

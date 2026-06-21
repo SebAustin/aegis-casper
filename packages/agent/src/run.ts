@@ -5,7 +5,7 @@
 
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadEnv } from "@aegis/shared";
+import { loadEnv, getRepoDotEnvPath } from "@aegis/shared";
 import { AgentLoop } from "./loop.js";
 import { CasperReadClient } from "./clients/casper-read-client.js";
 import {
@@ -15,6 +15,7 @@ import {
 } from "./clients/oracle-client.js";
 import { CasperTxClient } from "./clients/casper-tx-client.js";
 import { createLlmClient } from "./clients/llm-client.js";
+import { startTriggerServer } from "./trigger-server.js";
 
 const env = loadEnv();
 
@@ -26,7 +27,9 @@ const casperRead = new CasperReadClient(
   env.CSPR_CLOUD_API_URL,
   env.CSPR_CLOUD_API_KEY,
   env.VAULT_CONTRACT_HASH,
-  env.REGISTRY_CONTRACT_HASH
+  env.REGISTRY_CONTRACT_HASH,
+  env.CASPER_NODE_RPC_URL,
+  env.AGENT_ACCOUNT_HASH ?? ""
 );
 
 // ── Signer resolution ─────────────────────────────────────────────────────────
@@ -38,12 +41,15 @@ let oracleSign: (data: Buffer) => string;
 
 if (env.AGENT_PRIVATE_KEY_HEX) {
   try {
-    oracleSign = await buildRealSigner(env.AGENT_PRIVATE_KEY_HEX);
+    oracleSign = await buildRealSigner(
+      env.AGENT_PRIVATE_KEY_HEX,
+      env.AGENT_KEY_ALGORITHM
+    );
     process.stdout.write(
       JSON.stringify({
         level: "info",
         service: "agent",
-        msg: "x402 signer: using real ed25519 key from AGENT_PRIVATE_KEY_HEX",
+        msg: `x402 signer: using real ${env.AGENT_KEY_ALGORITHM} key from AGENT_PRIVATE_KEY_HEX`,
       }) + "\n"
     );
   } catch (err) {
@@ -79,11 +85,13 @@ const oracle = new OracleClient({
 
 const tx = new CasperTxClient({
   privateKeyHex: env.AGENT_PRIVATE_KEY_HEX ?? "",
+  keyAlgorithm: env.AGENT_KEY_ALGORITHM,
   accountHash: env.AGENT_ACCOUNT_HASH,
   nodeRpcUrl: env.CASPER_NODE_RPC_URL,
   network: env.CASPER_NETWORK,
   vaultContractHash: env.VAULT_CONTRACT_HASH,
   registryContractHash: env.REGISTRY_CONTRACT_HASH,
+  csprCloudApiKey: env.CSPR_CLOUD_API_KEY,
 });
 
 const llm = createLlmClient(env);
@@ -99,6 +107,7 @@ const loop = new AgentLoop(
     maxAssetWeightBps: env.MAX_ASSET_WEIGHT_BPS,
     txConfirmTimeoutMs: env.TX_CONFIRM_TIMEOUT_MS,
     reputationUpdateEpochs: env.REPUTATION_UPDATE_EPOCHS,
+    reputationSeedScore: BigInt(env.REPUTATION_SEED_SCORE),
     agentAccountHash: env.AGENT_ACCOUNT_HASH,
     decisionsLogPath: path.join(repoRoot, "logs", "decisions.jsonl"),
     paymentsLogPath: path.join(repoRoot, "logs", "payments.jsonl"),
@@ -112,9 +121,11 @@ process.stdout.write(
     service: "agent",
     msg: "Agent starting",
     interval_ms: env.AGENT_LOOP_INTERVAL_MS,
+    env_file: getRepoDotEnvPath() ?? "none",
     account: env.AGENT_ACCOUNT_HASH,
     llmProvider: env.LLM_PROVIDER,
   }) + "\n"
 );
 
 loop.start(env.AGENT_LOOP_INTERVAL_MS);
+startTriggerServer(loop, env.AGENT_TRIGGER_PORT);

@@ -16,7 +16,9 @@
     "agent": "pnpm --filter @aegis/agent start",
     "mcp": "pnpm --filter @aegis/mcp-server start",
     "dev": "pnpm --filter @aegis/dashboard dev",
+    "demo:check": "node scripts/demo-check.mjs",
     "contracts:test": "cd contracts && cargo test",
+    "contracts:build": "node scripts/build-contracts.mjs",
     "deploy:testnet": "node scripts/deploy-testnet.mjs"
   },
   "dependencies": {

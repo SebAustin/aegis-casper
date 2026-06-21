@@ -54,7 +54,7 @@ rustup target add wasm32-unknown-unknown --toolchain nightly-2026-01-01
 
 You must supply both of these yourself — they are never committed:
 
-- **Funded Casper testnet account.** Get free testnet CSPR from the faucet at https://testnet.cspr.live/tools/faucet. Each contract install costs approximately 250 CSPR; two installs plus seeding calls require at least 600 CSPR in the account.
+- **Funded Casper testnet account.** Get free testnet CSPR from the faucet at https://testnet.cspr.live/tools/faucet. Each Odra contract install defaults to **600 CSPR** payment (`INSTALL_PAYMENT_MOTES`). Two installs plus seeding calls require **at least ~1,215 CSPR** before running `pnpm deploy:testnet`. If you see `Out of gas error`, try raising `INSTALL_PAYMENT_MOTES` in small steps (e.g. 700–800 CSPR); amounts above ~1,000 CSPR may be rejected as invalid on some testnet lanes.
 - **CSPR.cloud API key.** Register at https://cspr.cloud, create an API key for the testnet environment, and set it as `CSPR_CLOUD_API_KEY`.
 
 ---
@@ -174,7 +174,7 @@ pnpm deploy:testnet
 ```
 
 The script performs, in order:
-1. Installs `Vault.wasm` to testnet via `SessionBuilder.installOrUpgrade` (250 CSPR payment).
+1. Installs `Vault.wasm` to testnet via `SessionBuilder.installOrUpgrade` (default 600 CSPR payment; override with `INSTALL_PAYMENT_MOTES`).
 2. Waits up to 3 minutes for on-chain execution.
 3. Installs `Registry.wasm` the same way.
 4. Reads both `vault_package_hash` and `registry_package_hash` from the deployer's named keys.

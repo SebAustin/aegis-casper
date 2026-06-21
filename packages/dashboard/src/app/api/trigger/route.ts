@@ -24,6 +24,34 @@ export async function POST(): Promise<NextResponse> {
     });
     clearTimeout(timeoutId);
 
+    if (res.status === 429) {
+      return NextResponse.json(
+        { error: "Agent trigger rate limit — wait a few seconds and retry." },
+        { status: 429 }
+      );
+    }
+
+    if (res.status === 503) {
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        cooldownRemainingMs?: number;
+      };
+      const cooldownMs = body.cooldownRemainingMs ?? 0;
+      const retryAfter =
+        res.headers.get("Retry-After") ??
+        (cooldownMs > 0 ? String(Math.ceil(cooldownMs / 1000)) : null);
+      return NextResponse.json(
+        {
+          error: body.error ?? "Agent in RPC cooldown — try again shortly.",
+          cooldownRemainingMs: cooldownMs,
+        },
+        {
+          status: 503,
+          headers: retryAfter ? { "Retry-After": retryAfter } : undefined,
+        }
+      );
+    }
+
     if (!res.ok) {
       throw new Error(`Agent trigger returned ${res.status}`);
     }

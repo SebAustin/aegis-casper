@@ -142,6 +142,25 @@ pnpm --filter @aegis/dashboard dev
 
 > Without `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, the agent falls back to `MockLlmClient` (deterministic allocation, confidence 80). Without `AGENT_PRIVATE_KEY_HEX`, oracle payment uses `mockSign` and on-chain transactions are stub hashes. The full audit log pipeline, x402 mock flow, and dashboard all work in this mode.
 
+### Testnet demo — recovery after RPC rate limits (HTTP 429)
+
+If the dashboard shows **STALE** badges, reputation as **"—"**, or the agent logs long `Code: 429` retries:
+
+1. **Stop** the agent and dashboard (`Ctrl+C` in both terminals).
+2. **Wait 2–3 minutes** for the CSPR.cloud rate-limit window to reset.
+3. **Start in order** (rebuild shared/agent after pulling code changes):
+   ```bash
+   pnpm oracle                                    # terminal 1
+   pnpm --filter @aegis/shared build \
+     && pnpm --filter @aegis/agent build \
+     && pnpm agent                                # terminal 2
+   pnpm dev                                       # terminal 3 — restart so API routes reload
+   ```
+4. Set `AGENT_LOOP_INTERVAL_MS=120000` in `.env` during demos to reduce RPC churn.
+5. Avoid rapid manual **Trigger Agent Run** clicks — wait for one iteration to finish.
+
+Ensure `packages/dashboard/.env.local` includes `CASPER_NODE_RPC_URL` and `REPUTATION_SEED_SCORE=50` so vault/reputation API routes fast-fail to fallback data instead of hanging.
+
 **Inspect the MCP server:**
 
 ```bash

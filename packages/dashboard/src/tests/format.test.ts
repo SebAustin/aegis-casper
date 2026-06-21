@@ -12,6 +12,7 @@ import {
   relativeTime,
   confidenceClass,
   getAssetLabel,
+  formatSkipReason,
 } from "../lib/format";
 
 describe("formatCspr", () => {
@@ -120,5 +121,21 @@ describe("getAssetLabel", () => {
   it("returns default label when no oracle name", () => {
     expect(getAssetLabel(0)).toBe("T-Bill");
     expect(getAssetLabel(4)).toBe("Other");
+  });
+});
+
+describe("formatSkipReason", () => {
+  it("explains oracle_unavailable", () => {
+    expect(formatSkipReason("oracle_unavailable")).toContain("pnpm oracle");
+  });
+
+  it("explains rpc_rate_limited", () => {
+    expect(formatSkipReason("rpc_rate_limited")).toContain("CSPR.cloud");
+  });
+
+  it("explains iteration fetch failures", () => {
+    expect(formatSkipReason("iteration_error: TypeError: fetch failed")).toContain(
+      "Oracle"
+    );
   });
 });

@@ -73,6 +73,8 @@ function normalizeContractHash(hash: string): string {
   return hash.replace(/^(hash-|contract-|package-)/, "");
 }
 
+// Vault/registry env vars store Odra package hashes (often prefixed `hash-`).
+
 function buildContractCall(
   params: BuildTxParams,
   entryPoint: string,
@@ -84,7 +86,7 @@ function buildContractCall(
   const sender = PublicKey.fromHex(params.senderPublicKeyHex);
   return new ContractCallBuilder()
     .from(sender)
-    .byHash(normalizeContractHash(params.vaultContractHash))
+    .byPackageHash(normalizeContractHash(params.vaultContractHash))
     .entryPoint(entryPoint)
     .runtimeArgs(args)
     .chainName(params.network)

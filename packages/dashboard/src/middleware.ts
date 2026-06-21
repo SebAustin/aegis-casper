@@ -22,10 +22,17 @@ export function middleware(request: NextRequest) {
   const oracleOrigin = process.env["NEXT_PUBLIC_ORACLE_URL"] ?? "http://localhost:4021";
   const csprCloudOrigin = process.env["NEXT_PUBLIC_CSPR_CLOUD_API_URL"] ?? "https://api.testnet.cspr.cloud";
 
+  const isDev = process.env.NODE_ENV === "development";
+  // Next.js dev bundles use eval() for HMR/webpack; strict CSP without unsafe-eval
+  // blocks client hydration — buttons render from SSR but never get event handlers.
+  const scriptSrc = isDev
+    ? `script-src 'self' 'nonce-${nonce}' 'unsafe-eval'`
+    : `script-src 'self' 'nonce-${nonce}'`;
+
   const csp = [
     `default-src 'self'`,
-    // Next.js inline scripts require the nonce; no unsafe-inline.
-    `script-src 'self' 'nonce-${nonce}'`,
+    // Next.js inline scripts require the nonce; no unsafe-inline (prod).
+    scriptSrc,
     // CSS: allow inline styles required by Next.js App Router + Tailwind v4.
     // Tailwind v4 injects styles at build time; a hash approach works but is
     // fragile during development. Using 'unsafe-inline' for style-src only is

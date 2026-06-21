@@ -178,20 +178,33 @@ export function mockSign(_data: Buffer): string {
  * @throws  If the key hex is malformed or the SDK cannot be imported.
  */
 export async function buildRealSigner(
-  privateKeyHex: string
+  privateKeyHex: string,
+  algorithm: "ed25519" | "secp256k1" = "ed25519"
 ): Promise<(data: Buffer) => string> {
   // Dynamic import keeps tests that don't exercise this path fast, and matches
   // the graceful-degrade pattern used in CasperTxClient (A-001 deviation note).
-  const { PrivateKey, KeyAlgorithm } = await import("casper-js-sdk").catch(
-    () => {
-      throw new Error(
-        "buildRealSigner: casper-js-sdk could not be imported. " +
-          "Install casper-js-sdk or use mockSign for offline/testnet runs."
-      );
-    }
-  );
+  const mod = (await import("casper-js-sdk").catch(() => {
+    throw new Error(
+      "buildRealSigner: casper-js-sdk could not be imported. " +
+        "Install casper-js-sdk or use mockSign for offline/testnet runs."
+    );
+  })) as unknown as
+    | { PrivateKey: unknown; KeyAlgorithm: unknown }
+    | { default: { PrivateKey: unknown; KeyAlgorithm: unknown } };
+  const sdk =
+    "default" in mod && mod.default
+      ? mod.default
+      : (mod as { PrivateKey: unknown; KeyAlgorithm: unknown });
+  const { PrivateKey, KeyAlgorithm } = sdk as {
+    PrivateKey: {
+      fromHex(hex: string, alg: number): { sign(data: Uint8Array): Uint8Array };
+    };
+    KeyAlgorithm: { ED25519: number; SECP256K1: number };
+  };
 
-  const privateKey = PrivateKey.fromHex(privateKeyHex, KeyAlgorithm.ED25519);
+  const keyAlg =
+    algorithm === "secp256k1" ? KeyAlgorithm.SECP256K1 : KeyAlgorithm.ED25519;
+  const privateKey = PrivateKey.fromHex(privateKeyHex, keyAlg);
 
   return (data: Buffer): string => {
     const signature = privateKey.sign(new Uint8Array(data));

@@ -1,19 +1,16 @@
 import { NextResponse } from "next/server";
 import { readFileSync, existsSync } from "fs";
-import { resolve } from "path";
 import type { DecisionLogEntry } from "@aegis/shared";
-import { decisionLogEntrySchema } from "@aegis/shared";
+import { parseDecisionLogLine, resolveRepoLogPath } from "@aegis/shared";
 
 /**
  * GET /api/decisions
  *
  * Reads the last 20 entries from logs/decisions.jsonl (FR-D-03).
- * The file is written by the agent package — this route provides a
- * server-side read so no filesystem path is exposed to the client bundle.
+ * Legacy rows are coerced via normalizeDecisionLogEntry before display.
  */
 export async function GET(): Promise<NextResponse> {
-  // Resolve relative to the monorepo root (two levels up from packages/dashboard).
-  const logsPath = resolve(process.cwd(), "../../logs/decisions.jsonl");
+  const logsPath = resolveRepoLogPath("decisions.jsonl");
 
   if (!existsSync(logsPath)) {
     return NextResponse.json<DecisionLogEntry[]>([], {
@@ -28,15 +25,24 @@ export async function GET(): Promise<NextResponse> {
       .filter((l) => l.trim().length > 0);
 
     const entries: DecisionLogEntry[] = [];
+    let skipped = 0;
+
     for (const line of lines.slice(-20)) {
       const parsed: unknown = JSON.parse(line);
-      const result = decisionLogEntrySchema.safeParse(parsed);
-      if (result.success) {
-        entries.push(result.data as unknown as DecisionLogEntry);
+      const entry = parseDecisionLogLine(parsed);
+      if (entry) {
+        entries.push(entry);
+      } else {
+        skipped++;
       }
     }
 
-    // Most recent first.
+    if (skipped > 0) {
+      process.stderr.write(
+        `[dashboard/api/decisions] skipped ${skipped} unparseable line(s)\n`
+      );
+    }
+
     entries.reverse();
 
     return NextResponse.json(entries, {

@@ -6,6 +6,8 @@
  * Secrets are never logged — only the variable NAME is mentioned in errors.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { z, ZodError } from "zod";
 
 // ── Schema ────────────────────────────────────────────────────────────────────
@@ -30,6 +32,8 @@ const envSchema = z.object({
   // Agent signing
   AGENT_PRIVATE_KEY_HEX: z.string().optional(),
   AGENT_ACCOUNT_HASH: z.string().optional(),
+  /** Casper key algorithm for AGENT_PRIVATE_KEY_HEX (default ed25519). */
+  AGENT_KEY_ALGORITHM: z.enum(["ed25519", "secp256k1"]).default("ed25519"),
 
   // LLM provider
   LLM_PROVIDER: z.enum(["anthropic", "openai"]).default("anthropic"),
@@ -50,6 +54,8 @@ const envSchema = z.object({
 
   // Agent loop
   AGENT_LOOP_INTERVAL_MS: z.coerce.number().int().min(1000).default(30_000),
+  /** Localhost HTTP port for dashboard POST /api/trigger → agent /trigger. */
+  AGENT_TRIGGER_PORT: z.coerce.number().int().min(1).default(4022),
   REALLOCATION_DRIFT_BPS: z.coerce.number().int().min(0).default(200),
   MIN_CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(100).default(60),
   MIN_VAULT_BALANCE_MOTES: z.coerce
@@ -68,6 +74,64 @@ const envSchema = z.object({
 export type Env = z.infer<typeof envSchema>;
 
 let _cached: Env | null = null;
+let _dotEnvHydrated = false;
+
+/** Keys that repo-root `.env` always wins over pre-set process.env (local dev tuning). */
+const REPO_DOTENV_OVERRIDE_KEYS = new Set(["AGENT_LOOP_INTERVAL_MS"]);
+
+/**
+ * Walk up from cwd to find the monorepo `.env` (repo root when running
+ * `pnpm agent` / `pnpm oracle` from any package directory).
+ */
+export function getRepoDotEnvPath(startDir: string = process.cwd()): string | null {
+  let dir = startDir;
+  for (let depth = 0; depth < 12; depth++) {
+    const candidate = path.join(dir, ".env");
+    if (existsSync(candidate)) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+function findRepoDotEnv(): string | null {
+  return getRepoDotEnvPath();
+}
+
+/** Merge repo-root `.env` into `process.env` without overriding existing vars. */
+function hydrateProcessEnvFromRepoDotEnv(): void {
+  if (_dotEnvHydrated) return;
+  _dotEnvHydrated = true;
+
+  const envPath = findRepoDotEnv();
+  if (!envPath) return;
+
+  const content = readFileSync(envPath, "utf8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    } else {
+      // Strip trailing inline comments (`KEY=value # note`) common in .env.example.
+      value = value.replace(/\s+#.*$/, "").trim();
+    }
+    if (
+      process.env[key] === undefined ||
+      REPO_DOTENV_OVERRIDE_KEYS.has(key)
+    ) {
+      process.env[key] = value;
+    }
+  }
+}
 
 /**
  * Load and validate environment variables.
@@ -81,6 +145,10 @@ let _cached: Env | null = null;
  *              process env.
  */
 export function loadEnv(raw: Record<string, string | undefined> = process.env): Env {
+  if (raw === process.env) {
+    hydrateProcessEnvFromRepoDotEnv();
+  }
+
   if (_cached !== null) {
     return _cached;
   }
@@ -104,6 +172,7 @@ export function loadEnv(raw: Record<string, string | undefined> = process.env): 
  */
 export function _resetEnvCache(): void {
   _cached = null;
+  _dotEnvHydrated = false;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

@@ -14,6 +14,7 @@
  */
 
 import type { AllocationMap } from "@aegis/shared";
+import { isRateLimitError, sleep } from "@aegis/shared";
 
 // ── Interface ─────────────────────────────────────────────────────────────────
 
@@ -47,7 +48,11 @@ export interface SdkTransaction {
   // Inspection surface used by tests to assert the tx carries the right data.
   entryPoint: { type: number; customEntryPoint?: string };
   args: { args: Map<string, SdkClValue> };
-  target: { stored?: { id?: { byHash?: { toHex(): string } } } };
+  target: {
+    stored?: {
+      id?: { byPackageHash?: { addr?: { hashBytes?: Uint8Array } } };
+    };
+  };
 }
 
 /** A CLValue instance — opaque except for type introspection used in tests. */
@@ -66,7 +71,7 @@ export interface SdkPublicKey {
 
 export interface SdkContractCallBuilder {
   from(pk: SdkPublicKey): SdkContractCallBuilder;
-  byHash(contractHash: string): SdkContractCallBuilder;
+  byPackageHash(contractHash: string): SdkContractCallBuilder;
   entryPoint(name: string): SdkContractCallBuilder;
   runtimeArgs(args: SdkArgs): SdkContractCallBuilder;
   chainName(name: string): SdkContractCallBuilder;
@@ -90,7 +95,7 @@ interface SdkRpcClient {
 export interface CasperSdk {
   ContractCallBuilder: new () => SdkContractCallBuilder;
   PrivateKey: { fromHex(hex: string, alg: number): SdkPrivateKey };
-  KeyAlgorithm: { ED25519: number };
+  KeyAlgorithm: { ED25519: number; SECP256K1: number };
   RpcClient: new (handler: unknown) => SdkRpcClient;
   HttpHandler: new (endpoint: string) => unknown;
   Args: {
@@ -116,15 +121,27 @@ export interface CasperSdk {
 const CONTRACT_CALL_PAYMENT_MOTES = 5_000_000_000;
 const TX_TTL_MS = 1_800_000; // 30 minutes (matches SDK default).
 
+function resolveKeyAlgorithm(
+  sdk: CasperSdk,
+  algorithm: CasperTxClientConfig["keyAlgorithm"]
+): number {
+  return algorithm === "secp256k1"
+    ? sdk.KeyAlgorithm.SECP256K1
+    : sdk.KeyAlgorithm.ED25519;
+}
+
 // ── CasperTxClient ────────────────────────────────────────────────────────────
 
 export interface CasperTxClientConfig {
   privateKeyHex: string;
+  keyAlgorithm: "ed25519" | "secp256k1";
   accountHash: string;
   nodeRpcUrl: string;
   network: string;
   vaultContractHash: string | undefined;
   registryContractHash: string | undefined;
+  /** CSPR.cloud access token for authenticated node RPC (no `Bearer` prefix). */
+  csprCloudApiKey?: string;
 }
 
 export class CasperTxClient implements TxClient {
@@ -149,7 +166,16 @@ export class CasperTxClient implements TxClient {
     private readonly makeRpcClient: (
       sdk: CasperSdk,
       url: string
-    ) => SdkRpcClient = (sdk, url) => new sdk.RpcClient(new sdk.HttpHandler(url))
+    ) => SdkRpcClient = (sdk, url) => {
+      const handler = new sdk.HttpHandler(url) as {
+        setCustomHeaders?(headers: Record<string, string>): void;
+      };
+      const key = this.config.csprCloudApiKey;
+      if (key && !key.startsWith("replace-with") && handler.setCustomHeaders) {
+        handler.setCustomHeaders({ Authorization: key });
+      }
+      return new sdk.RpcClient(handler);
+    }
   ) {}
 
   /**
@@ -171,7 +197,7 @@ export class CasperTxClient implements TxClient {
     return withRetry(async () => {
       const privateKey = sdk.PrivateKey.fromHex(
         this.config.privateKeyHex,
-        sdk.KeyAlgorithm.ED25519
+        resolveKeyAlgorithm(sdk, this.config.keyAlgorithm)
       );
       const tx = buildReallocateTx(
         sdk,
@@ -214,7 +240,7 @@ export class CasperTxClient implements TxClient {
     return withRetry(async () => {
       const privateKey = sdk.PrivateKey.fromHex(
         this.config.privateKeyHex,
-        sdk.KeyAlgorithm.ED25519
+        resolveKeyAlgorithm(sdk, this.config.keyAlgorithm)
       );
       const tx = buildUpdateReputationTx(
         sdk,
@@ -239,17 +265,29 @@ export class CasperTxClient implements TxClient {
     timestamp?: number;
   }> {
     try {
-      const res = await fetch(
-        `${this.config.nodeRpcUrl.replace("/rpc", "")}/deploys/${txHash}`,
-        { signal: AbortSignal.timeout(10_000) }
-      );
-      if (!res.ok) return { status: "pending" };
-      const data = (await res.json()) as {
-        result?: { execution_results?: Array<{ result: unknown }> };
+      const sdk = await this.loadSdk();
+      const rpc = this.makeRpcClient(sdk, this.config.nodeRpcUrl) as unknown as {
+        getTransactionByTransactionHash(hash: string): Promise<{
+          executionInfo?: {
+            executionResult?: { isSuccess?: () => boolean; isFailure?: () => boolean };
+            blockHeight?: number;
+          };
+        }>;
       };
-      const results = data.result?.execution_results;
-      if (!results || results.length === 0) return { status: "pending" };
-      return { status: "confirmed" };
+      const info = await withRetry(() =>
+        rpc.getTransactionByTransactionHash(txHash.replace(/^0x/, ""))
+      );
+      const result = info.executionInfo?.executionResult;
+      if (result?.isFailure?.()) {
+        return { status: "failed", blockHeight: info.executionInfo?.blockHeight };
+      }
+      if (result?.isSuccess?.()) {
+        return {
+          status: "confirmed",
+          blockHeight: info.executionInfo?.blockHeight,
+        };
+      }
+      return { status: "pending" };
     } catch {
       return { status: "pending" };
     }
@@ -315,7 +353,7 @@ export function buildReallocateTx(
   });
 
   let builder = new sdk.ContractCallBuilder()
-    .byHash(normalizeContractHash(vaultContractHash))
+    .byPackageHash(normalizeContractHash(vaultContractHash))
     .entryPoint("reallocate")
     .runtimeArgs(args)
     .chainName(network)
@@ -350,7 +388,7 @@ export function buildUpdateReputationTx(
   });
 
   let builder = new sdk.ContractCallBuilder()
-    .byHash(normalizeContractHash(registryContractHash))
+    .byPackageHash(normalizeContractHash(registryContractHash))
     .entryPoint("update_reputation")
     .runtimeArgs(args)
     .chainName(network)
@@ -381,11 +419,11 @@ async function signAndSubmit(
 // ── Address / hash normalization ───────────────────────────────────────────────
 
 /**
- * The ContractCallBuilder's `byHash` expects a bare 64-char hex string. Strip a
- * `hash-`/`contract-` prefix if the caller passed a prefixed form.
+ * Odra package hashes may be passed as `hash-`, `package-`, or bare hex.
+ * `byPackageHash` expects the bare 64-char hex digest.
  */
 function normalizeContractHash(hash: string): string {
-  return hash.replace(/^(hash-|contract-)/, "");
+  return hash.replace(/^(hash-|contract-|package-)/, "");
 }
 
 /**
@@ -398,13 +436,10 @@ function normalizeAccountHash(accountHash: string): string {
     : `account-hash-${accountHash.replace(/^0x/, "")}`;
 }
 
-// ── Retry ────────────────────────────────────────────────────────────────────
-
-/**
- * Retry with exponential backoff: 1s, 2s, 4s (NFR-R-03).
- */
+/** Retry with backoff; longer pauses on CSPR.cloud HTTP 429 (NFR-R-03). */
 async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
-  const delays = [1_000, 2_000, 4_000] as const;
+  const delays = [1_000, 3_000, 8_000] as const;
+  const rateLimitDelays = [8_000, 20_000, 45_000] as const;
   let lastError: unknown;
 
   for (let attempt = 0; attempt <= delays.length; attempt++) {
@@ -413,14 +448,13 @@ async function withRetry<T>(fn: () => Promise<T>): Promise<T> {
     } catch (err) {
       lastError = err;
       if (attempt < delays.length) {
-        await sleep(delays[attempt]!);
+        const delay = isRateLimitError(err)
+          ? rateLimitDelays[attempt]!
+          : delays[attempt]!;
+        await sleep(delay);
       }
     }
   }
 
   throw lastError;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -84,7 +84,7 @@ function makeMockCasperRead(overrides: Partial<VaultState> = {}): CasperReadClie
     getVaultState: async () => ({ ...MOCK_VAULT, ...overrides }),
     getReputation: async () => MOCK_REPUTATION,
     getTransactionStatus: async () => ({ status: "confirmed" }),
-    // satisfy the full interface shape
+    consumePerceiveRateLimited: () => false,
   } as unknown as CasperReadClient;
 }
 
@@ -127,6 +127,7 @@ function makeLoop(
       maxAssetWeightBps: 6000,
       txConfirmTimeoutMs: 5_000,
       reputationUpdateEpochs: 3,
+      reputationSeedScore: 50n,
       agentAccountHash: "test-agent-hash",
       decisionsLogPath: decisionsLog,
       paymentsLogPath: paymentsLog,
@@ -300,6 +301,48 @@ describe("AgentLoop.runOnce()", () => {
 
     const decisions = await readJsonl<DecisionLogEntry>(decisionsLog);
     expect(decisions).toHaveLength(5);
+  });
+
+  it("skips act with oracle_unavailable when oracle fetch fails", async () => {
+    const failingOracle = {
+      fetch: async () => {
+        throw new TypeError("fetch failed");
+      },
+    } as unknown as OracleClient;
+
+    const txClient = new MockTxClient();
+    const loop = new AgentLoop(
+      {
+        reallocationDriftBps: 200,
+        minConfidenceThreshold: 60,
+        minVaultBalanceMotes: BigInt("100000000000"),
+        maxAssetWeightBps: 6000,
+        txConfirmTimeoutMs: 5_000,
+        reputationUpdateEpochs: 3,
+        reputationSeedScore: 50n,
+        agentAccountHash: "test-agent-hash",
+        decisionsLogPath: decisionsLog,
+        paymentsLogPath: paymentsLog,
+      },
+      {
+        casperRead: makeMockCasperRead(),
+        oracle: failingOracle,
+        llm: new MockLlmClient({
+          allocation: HIGH_DRIFT_ALLOCATION,
+          confidence: 80,
+        }),
+        tx: txClient,
+      }
+    );
+
+    const entry = await loop.runOnce();
+    expect(entry.acted).toBe(false);
+    expect(entry.skipReason).toBe("oracle_unavailable");
+    expect(entry.rationale.length).toBeGreaterThan(0);
+    expect(txClient.submittedReallocations).toHaveLength(0);
+
+    const payments = await readJsonl(paymentsLog);
+    expect(payments).toHaveLength(0);
   });
 
   it("produces DecisionLogEntry with all required SC-05 fields", async () => {

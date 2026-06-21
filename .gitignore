@@ -11,3 +11,7 @@ logs/*.jsonl
 .next/
 packages/*/.next/
 *.tsbuildinfo
+.env.docker.local
+.env.*.local
+.cursor/
+**/.cursor/

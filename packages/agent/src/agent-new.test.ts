@@ -90,6 +90,7 @@ function makeMockCasperRead(overrides: Partial<VaultState> = {}): CasperReadClie
     getVaultState: async () => ({ ...MOCK_VAULT, ...overrides }),
     getReputation: async () => MOCK_REPUTATION,
     getTransactionStatus: async () => ({ status: "confirmed" as const }),
+    consumePerceiveRateLimited: () => false,
   } as unknown as CasperReadClient;
 }
 
@@ -139,6 +140,7 @@ function makeBaseConfig(overrides: Record<string, unknown> = {}) {
     maxAssetWeightBps: 6000,
     txConfirmTimeoutMs: 5_000,
     reputationUpdateEpochs: 3,
+    reputationSeedScore: 50n,
     agentAccountHash: "test-agent-hash",
     decisionsLogPath: decisionsLog,
     paymentsLogPath: paymentsLog,

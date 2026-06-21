@@ -8,6 +8,7 @@ import {
   confidenceClass,
   formatBps,
   formatCountdown,
+  formatSkipReason,
   getAssetLabel,
 } from "@/lib/format";
 import { TxHashChip } from "@/components/ui/TxHashChip";
@@ -275,7 +276,7 @@ function FeedItem({ entry, isNew }: { entry: DecisionLogEntry; isNew: boolean })
             color: "var(--color-text-muted)",
           }}
         >
-          Skipped: {entry.skipReason}
+          Skipped: {formatSkipReason(entry.skipReason)}
         </span>
       )}
     </div>

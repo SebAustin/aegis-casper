@@ -9,6 +9,11 @@ import { formatCspr, formatShares } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
 import { TxHashChip } from "@/components/ui/TxHashChip";
 import { buildVaultTransaction } from "@/lib/casper-tx";
+import {
+  addMockDeposit,
+  addMockWithdraw,
+  isMockWalletMode,
+} from "@/lib/mock-vault-overlay";
 
 type ModalStep = "amount" | "review" | "signing" | "submitted" | "error";
 
@@ -132,6 +137,10 @@ export function DepositWithdrawModal({ mode, vaultData, onClose }: Props) {
       ]);
 
       setTxHash(hash);
+      if (isMockWalletMode()) {
+        if (mode === "deposit") addMockDeposit(amountNum);
+        else addMockWithdraw(amountNum);
+      }
       setStep("submitted");
     } catch (err: unknown) {
       const msg =

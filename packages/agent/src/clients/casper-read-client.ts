@@ -9,6 +9,14 @@
  */
 
 import type { VaultState, AgentReputation, AllocationMap } from "@aegis/shared";
+import {
+  createCasperRpcClient,
+  isRateLimitError,
+  readReputationFromRpc,
+  readVaultStateFromRpc,
+  withRpcRetry,
+} from "@aegis/shared";
+import { csprCloudAuthHeaders, stripHashPrefix } from "@aegis/shared";
 
 // ── Types matching CSPR.cloud REST response shapes ────────────────────────────
 
@@ -27,13 +35,16 @@ interface CacheEntry<T> {
 
 export class CasperReadClient {
   private readonly cache = new Map<string, CacheEntry<unknown>>();
-  private readonly TTL_MS = 10_000;
+  private readonly TTL_MS = 30_000;
+  private perceiveRateLimited = false;
 
   constructor(
     private readonly apiUrl: string,
     private readonly apiKey: string | undefined,
     private readonly vaultContractHash: string | undefined,
-    private readonly registryContractHash: string | undefined
+    private readonly registryContractHash: string | undefined,
+    private readonly nodeRpcUrl: string = "https://node.testnet.cspr.cloud/rpc",
+    private readonly agentAccountHash: string = ""
   ) {}
 
   // ── Internal helpers ────────────────────────────────────────────────────────
@@ -42,10 +53,9 @@ export class CasperReadClient {
     const url = `${this.apiUrl}${path}`;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      Accept: "application/json",
+      ...csprCloudAuthHeaders(this.apiKey),
     };
-    if (this.apiKey) {
-      headers["Authorization"] = `Bearer ${this.apiKey}`;
-    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -74,6 +84,13 @@ export class CasperReadClient {
     this.cache.set(key, { value, expiresAt: Date.now() + this.TTL_MS });
   }
 
+  /** True when the last perceive-phase RPC read hit HTTP 429. */
+  consumePerceiveRateLimited(): boolean {
+    const flag = this.perceiveRateLimited;
+    this.perceiveRateLimited = false;
+    return flag;
+  }
+
   // ── Vault state ─────────────────────────────────────────────────────────────
 
   /**
@@ -94,17 +111,39 @@ export class CasperReadClient {
     }
 
     try {
-      const data = await this.fetchJson<{ data: { named_keys: CsprCloudNamedKey[] } }>(
-        `/contracts/${this.vaultContractHash}`
+      const rpc = await createCasperRpcClient({
+        nodeRpcUrl: this.nodeRpcUrl,
+        apiKey: this.apiKey,
+      });
+      const state = await readVaultStateFromRpc(
+        rpc,
+        this.vaultContractHash,
+        this.agentAccountHash,
+        { readPolicy: "fast-fail" }
       );
-      const state = parseVaultState(data.data.named_keys);
       this.setCached(cacheKey, state);
       return state;
-    } catch (err) {
-      process.stderr.write(
-        `[agent/casper-read] getVaultState error: ${String(err)} — using placeholder\n`
-      );
-      return placeholderVaultState();
+    } catch (rpcErr) {
+      if (isRateLimitError(rpcErr)) {
+        this.perceiveRateLimited = true;
+        process.stderr.write(
+          `[agent/casper-read] getVaultState rate limited — using placeholder\n`
+        );
+        return placeholderVaultState();
+      }
+      try {
+        const data = await this.fetchJson<{ data: { named_keys: CsprCloudNamedKey[] } }>(
+          `/contracts/${stripHashPrefix(this.vaultContractHash)}`
+        );
+        const state = parseVaultState(data.data.named_keys);
+        this.setCached(cacheKey, state);
+        return state;
+      } catch (err) {
+        process.stderr.write(
+          `[agent/casper-read] getVaultState error: ${String(rpcErr)} / ${String(err)} — using placeholder\n`
+        );
+        return placeholderVaultState();
+      }
     }
   }
 
@@ -113,7 +152,10 @@ export class CasperReadClient {
   /**
    * Query agent reputation from the registry contract.
    */
-  async getReputation(agentAccountHash: string): Promise<AgentReputation> {
+  async getReputation(
+    agentAccountHash: string,
+    fallbackScore: bigint = 50n
+  ): Promise<AgentReputation> {
     const cacheKey = `rep:${agentAccountHash}`;
     const cached = this.getCached<AgentReputation>(cacheKey);
     if (cached) return cached;
@@ -122,21 +164,49 @@ export class CasperReadClient {
       process.stderr.write(
         "[agent/casper-read] REGISTRY_CONTRACT_HASH not set — using placeholder reputation\n"
       );
-      return placeholderReputation(agentAccountHash);
+      return placeholderReputation(agentAccountHash, fallbackScore);
+    }
+
+    try {
+      const rpc = await createCasperRpcClient({
+        nodeRpcUrl: this.nodeRpcUrl,
+        apiKey: this.apiKey,
+      });
+      const rep = await readReputationFromRpc(
+        rpc,
+        this.registryContractHash,
+        agentAccountHash,
+        { readPolicy: "fast-fail" }
+      );
+      if (rep) {
+        this.setCached(cacheKey, rep);
+        return rep;
+      }
+    } catch (rpcErr) {
+      if (isRateLimitError(rpcErr)) {
+        this.perceiveRateLimited = true;
+        process.stderr.write(
+          `[agent/casper-read] getReputation rate limited — using seed fallback\n`
+        );
+        return placeholderReputation(agentAccountHash, fallbackScore);
+      }
+      process.stderr.write(
+        `[agent/casper-read] getReputation RPC error: ${String(rpcErr)}\n`
+      );
     }
 
     try {
       const data = await this.fetchJson<{ data: { named_keys: CsprCloudNamedKey[] } }>(
-        `/contracts/${this.registryContractHash}`
+        `/contracts/${stripHashPrefix(this.registryContractHash)}`
       );
       const rep = parseReputation(data.data.named_keys, agentAccountHash);
       this.setCached(cacheKey, rep);
       return rep;
     } catch (err) {
       process.stderr.write(
-        `[agent/casper-read] getReputation error: ${String(err)} — using placeholder\n`
+        `[agent/casper-read] getReputation error: ${String(err)} — using seed fallback\n`
       );
-      return placeholderReputation(agentAccountHash);
+      return placeholderReputation(agentAccountHash, fallbackScore);
     }
   }
 
@@ -151,22 +221,38 @@ export class CasperReadClient {
     timestamp?: number;
   }> {
     try {
-      const data = await this.fetchJson<{
-        data: { execution_results?: Array<{ result: { Success?: unknown; Failure?: unknown } }> };
-      }>(`/deploys/${txHash}`);
-
-      const results = data.data.execution_results;
-      if (!results || results.length === 0) {
-        return { status: "pending" };
+      const sdkMod = (await import("casper-js-sdk")) as {
+        HttpHandler: new (url: string) => { setCustomHeaders?(h: Record<string, string>): void };
+        RpcClient: new (handler: unknown) => {
+          getTransactionByTransactionHash(hash: string): Promise<{
+            executionInfo?: {
+              executionResult?: { isSuccess?: () => boolean; isFailure?: () => boolean };
+              blockHeight?: number;
+            };
+          }>;
+        };
+        default?: unknown;
+      };
+      const sdk = (sdkMod.default ?? sdkMod) as typeof sdkMod;
+      const handler = new sdk.HttpHandler(this.nodeRpcUrl);
+      if (this.apiKey && handler.setCustomHeaders) {
+        handler.setCustomHeaders({ Authorization: this.apiKey });
       }
-
-      const last = results[results.length - 1];
-      if (!last) return { status: "pending" };
-
-      if (last.result.Failure) {
-        return { status: "failed" };
+      const rpc = new sdk.RpcClient(handler);
+      const info = await withRpcRetry(() =>
+        rpc.getTransactionByTransactionHash(txHash.replace(/^0x/, ""))
+      );
+      const result = info.executionInfo?.executionResult;
+      if (result?.isFailure?.()) {
+        return { status: "failed", blockHeight: info.executionInfo?.blockHeight };
       }
-      return { status: "confirmed" };
+      if (result?.isSuccess?.()) {
+        return {
+          status: "confirmed",
+          blockHeight: info.executionInfo?.blockHeight,
+        };
+      }
+      return { status: "pending" };
     } catch {
       return { status: "pending" };
     }
@@ -233,10 +319,13 @@ function placeholderVaultState(): VaultState {
   };
 }
 
-function placeholderReputation(agentAccountHash: string): AgentReputation {
+function placeholderReputation(
+  agentAccountHash: string,
+  score: bigint = 50n
+): AgentReputation {
   return {
     agentAccountHash,
-    score: BigInt(50),
+    score,
     totalDecisions: BigInt(0),
     correctPredictions: BigInt(0),
     registeredTs: 0,

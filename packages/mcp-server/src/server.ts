@@ -18,7 +18,9 @@ const casperRead = new CasperReadClient(
   env.CSPR_CLOUD_API_URL,
   env.CSPR_CLOUD_API_KEY,
   env.VAULT_CONTRACT_HASH,
-  env.REGISTRY_CONTRACT_HASH
+  env.REGISTRY_CONTRACT_HASH,
+  env.CASPER_NODE_RPC_URL,
+  env.AGENT_ACCOUNT_HASH ?? ""
 );
 
 const oracle = new OracleClient({

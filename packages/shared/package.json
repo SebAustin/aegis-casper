@@ -18,6 +18,8 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
+    "blakejs": "^1.2.1",
+    "casper-js-sdk": "^5.0.12",
     "zod": "^3.23.8"
   },
   "devDependencies": {

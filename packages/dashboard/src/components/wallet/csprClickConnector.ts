@@ -87,15 +87,32 @@ async function fetchBalanceMotes(accountIdentifier: string): Promise<bigint> {
 export const csprClickConnector: WalletConnector = {
   async connect(): Promise<string> {
     const runtime = getRuntime();
-    const account = await runtime.connect(CASPER_WALLET_PROVIDER);
-    const publicKeyHex =
-      account?.public_key ?? (await runtime.getActivePublicKey());
-    if (!publicKeyHex) {
-      throw new Error("Casper Wallet did not return an account.");
-    }
-    activePublicKeyHex = publicKeyHex;
-    // The UI tracks accounts by public key (also used as the signer identifier).
-    return publicKeyHex;
+    const CONNECT_TIMEOUT_MS = 20_000;
+
+    const connectPromise = (async () => {
+      const account = await runtime.connect(CASPER_WALLET_PROVIDER);
+      const publicKeyHex =
+        account?.public_key ?? (await runtime.getActivePublicKey());
+      if (!publicKeyHex) {
+        throw new Error("Casper Wallet did not return an account.");
+      }
+      activePublicKeyHex = publicKeyHex;
+      return publicKeyHex;
+    })();
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(
+          new Error(
+            "Wallet connection timed out. For local demo without Casper Wallet, " +
+              "set NEXT_PUBLIC_USE_MOCK_WALLET=true in packages/dashboard/.env.local " +
+              "and restart pnpm dev."
+          )
+        );
+      }, CONNECT_TIMEOUT_MS);
+    });
+
+    return Promise.race([connectPromise, timeoutPromise]);
   },
 
   async disconnect(): Promise<void> {

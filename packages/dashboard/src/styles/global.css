@@ -300,9 +300,18 @@ body {
   .spinner { animation: none; }
 }
 
-/* ── Trigger button label — hidden at 1024px, icon-only ─────────────────── */
+/* ── Trigger button label — abbreviated on narrow viewports ─────────────── */
 @media (max-width: 1023px) {
-  .trigger-label {
+  .trigger-label--long {
+    display: none;
+  }
+  .trigger-label--short {
+    display: inline;
+  }
+}
+
+@media (min-width: 1024px) {
+  .trigger-label--short {
     display: none;
   }
 }

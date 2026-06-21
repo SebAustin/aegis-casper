@@ -18,10 +18,14 @@ export function WalletConnectButton() {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   const handleConnect = async () => {
-    if (state.status === "disconnected" || state.status === "error") {
-      await connect();
-    } else if (state.status === "connected") {
-      setDropdownOpen((o) => !o);
+    try {
+      if (state.status === "disconnected" || state.status === "error") {
+        await connect();
+      } else if (state.status === "connected") {
+        setDropdownOpen((o) => !o);
+      }
+    } catch {
+      // WalletProvider sets error state; this guards against unexpected throws.
     }
   };
 
@@ -90,6 +94,14 @@ export function WalletConnectButton() {
 
   return (
     <div style={{ position: "relative" }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "flex-end",
+          gap: "var(--space-1)",
+        }}
+      >
       <button
         ref={buttonRef}
         type="button"
@@ -136,6 +148,23 @@ export function WalletConnectButton() {
           <span>Connect Wallet</span>
         )}
       </button>
+
+      {hasError && state.status === "error" && (
+        <p
+          role="alert"
+          style={{
+            margin: 0,
+            maxWidth: "280px",
+            fontSize: "var(--text-2xs)",
+            color: "var(--color-danger)",
+            textAlign: "right",
+            lineHeight: 1.3,
+          }}
+        >
+          {state.message}
+        </p>
+      )}
+      </div>
 
       {isConnected && dropdownOpen && (
         <div

@@ -108,3 +108,56 @@ export function getAssetLabel(assetId: number, oracleName?: string): string {
   const SLOT_LABELS = ["T-Bill", "Priv-Cr", "Commod", "Liq-St", "Other"] as const;
   return SLOT_LABELS[assetId] ?? `Asset ${assetId + 1}`;
 }
+
+/** Human-readable agent skip reason for the Decision Feed. */
+export function formatSkipReason(raw: string): string {
+  if (raw.startsWith("balance_below_minimum:")) {
+    return (
+      "Vault has no on-chain CSPR yet (mock-wallet deposits only update the UI). " +
+      "Set MIN_VAULT_BALANCE_MOTES=0 in .env for local demo, or deposit real testnet CSPR."
+    );
+  }
+  if (raw.startsWith("drift_below_threshold:")) {
+    return "Allocation change too small — agent is already close to the LLM target.";
+  }
+  if (raw.startsWith("confidence_below_threshold:")) {
+    return "LLM confidence below threshold — no on-chain action taken.";
+  }
+  if (raw === "vault_paused") {
+    return "Vault is paused on-chain.";
+  }
+  if (raw.startsWith("allocation_out_of_bounds:")) {
+    return `Invalid allocation from LLM: ${raw.replace("allocation_out_of_bounds: ", "")}`;
+  }
+  if (raw.startsWith("llm_invalid_output:")) {
+    return "LLM returned invalid JSON — iteration skipped.";
+  }
+  if (raw === "oracle_unavailable") {
+    return (
+      "Oracle service unreachable — LLM ran on demo yields; no on-chain action. " +
+      "Start the oracle with `pnpm oracle` in a separate terminal."
+    );
+  }
+  if (raw === "rpc_rate_limited") {
+    return (
+      "CSPR.cloud RPC rate limit — on-chain act skipped. " +
+      "Wait ~90s or stop polling; cached vault/reputation data is shown on the dashboard."
+    );
+  }
+  if (raw.startsWith("iteration_error:") && raw.includes("429")) {
+    return "CSPR.cloud RPC rate limit — agent will retry after a short cooldown.";
+  }
+  if (raw.startsWith("iteration_error:") && raw.includes("fetch failed")) {
+    return (
+      "Oracle or network unreachable during perceive — rebuild the agent for graceful handling, " +
+      "or ensure `pnpm oracle` is running before `pnpm agent`."
+    );
+  }
+  if (raw === "rpc_rate_limited: wait before retrying") {
+    return "Agent in RPC cooldown from CSPR.cloud — manual trigger blocked until cooldown ends.";
+  }
+  if (raw === "prior_iteration_running") {
+    return "Agent is still running the previous iteration — wait for it to finish.";
+  }
+  return raw;
+}

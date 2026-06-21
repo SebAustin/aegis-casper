@@ -13,10 +13,31 @@ import express, { type Request, type Response } from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { appendJsonl, loadEnv } from "@aegis/shared";
+import type { RwaOracleData } from "@aegis/shared";
 import { createFacilitator } from "./facilitator.js";
 import { generateAssets } from "./seed-data.js";
 
 const startedAt = Date.now();
+
+/** Last successful paid oracle response (served by GET /api/oracle/latest). */
+let latestOracleData: RwaOracleData | null = null;
+
+function demoOracleSnapshot(): RwaOracleData {
+  const now = Math.floor(Date.now() / 1000);
+  return {
+    timestamp: Date.now(),
+    oracleVersion: "1.0.0-demo",
+    paymentReceipt: {
+      paymentHash: "demo-unpaid",
+      facilitator: "mock",
+      amountMotes: 1_000_000n,
+      payerAccountHash: "demo",
+      expiry: now + 3600,
+      confirmedAt: now,
+    },
+    assets: generateAssets(false),
+  };
+}
 
 export interface CreateAppOptions {
   /** Override the payments log path (default: repo-root logs/payments.jsonl). */
@@ -55,6 +76,18 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
       status: "ok",
       version: "1.0.0",
       uptime_ms: Date.now() - startedAt,
+    });
+  });
+
+  // ── Latest snapshot (public, for dashboard polling) ─────────────────────
+
+  app.get("/api/oracle/latest", (_req: Request, res: Response) => {
+    const base = latestOracleData ?? demoOracleSnapshot();
+    const now = Date.now();
+    res.json({
+      ...base,
+      timestamp: now,
+      assets: base.assets.map((a) => ({ ...a, dataFreshnessMs: now })),
     });
   });
 
@@ -116,12 +149,13 @@ export function createApp(options: CreateAppOptions = {}): express.Application {
 
     // Step 4: Return yield data + receipt (FR-O-04)
     const assets = generateAssets(true);
-    res.json({
+    latestOracleData = {
       timestamp: Date.now(),
       oracleVersion: "1.0.0",
       paymentReceipt: receipt,
       assets,
-    });
+    };
+    res.json(latestOracleData);
   });
 
   return app;

@@ -31,12 +31,38 @@
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
+
+/** Load repo-root `.env` into process.env (does not override existing vars). */
+function loadDotEnv() {
+  const envPath = path.join(repoRoot, ".env");
+  if (!existsSync(envPath)) return;
+  const content = readFileSync(envPath, "utf8");
+  for (const line of content.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadDotEnv();
 
 // ── Structured logging ──────────────────────────────────────────────────────
 
@@ -69,9 +95,19 @@ const SEED_SCORE = Number.parseInt(
   10
 );
 
-// Payment ceilings (motes). Installs are large; calls are small.
-const INSTALL_PAYMENT_MOTES = 250_000_000_000; // 250 CSPR (Odra installs are heavy)
+// Payment ceilings (motes). Large Odra wasm installs need far more gas than small calls.
+// 250 CSPR was too low (out-of-gas). Empirically ~600 CSPR succeeds for these wasm
+// artifacts on casper-test; higher values can be rejected as invalid transactions.
+const INSTALL_PAYMENT_MOTES = Number.parseInt(
+  process.env.INSTALL_PAYMENT_MOTES ?? "600000000000",
+  10
+); // 600 CSPR default
+const INSTALL_GAS_PRICE_TOLERANCE = Number.parseInt(
+  process.env.INSTALL_GAS_PRICE_TOLERANCE ?? "1",
+  10
+);
 const CALL_PAYMENT_MOTES = 5_000_000_000; // 5 CSPR
+const TX_TTL_MS = 1_800_000; // 30 minutes
 const EXEC_TIMEOUT_MS = 180_000; // 3 min wait for execution
 
 function resolveWasm(name, fallback) {
@@ -106,9 +142,15 @@ async function main() {
       "Refusing to deploy: set ALLOW_TESTNET_DEPLOY=true to confirm a real testnet deploy."
     );
   }
-  if (!PRIVATE_KEY_HEX || PRIVATE_KEY_HEX.startsWith("replace-with")) {
+  if (
+    !PRIVATE_KEY_HEX ||
+    PRIVATE_KEY_HEX.startsWith("replace-with") ||
+    PRIVATE_KEY_HEX.includes(".pem") ||
+    PRIVATE_KEY_HEX.includes("/")
+  ) {
     fail(
-      "AGENT_PRIVATE_KEY_HEX is not set to a real funded testnet secret key (hex)."
+      "AGENT_PRIVATE_KEY_HEX is not set to a real funded testnet secret key (hex). " +
+        "Ensure repo-root .env contains a 64-char hex key (not a .pem path)."
     );
   }
   if (!VAULT_WASM || !REGISTRY_WASM) {
@@ -136,7 +178,12 @@ async function main() {
     Key,
   } = sdk;
 
-  const privateKey = PrivateKey.fromHex(PRIVATE_KEY_HEX, KeyAlgorithm.ED25519);
+  const privateKey = PrivateKey.fromHex(
+    PRIVATE_KEY_HEX,
+    (process.env.AGENT_KEY_ALGORITHM ?? "ed25519").toLowerCase() === "secp256k1"
+      ? KeyAlgorithm.SECP256K1
+      : KeyAlgorithm.ED25519
+  );
   const publicKey = privateKey.publicKey;
   const ownerAccountHash = publicKey.accountHash();
   const ownerAccountHashStr = ownerAccountHash.toPrefixedString();
@@ -152,11 +199,38 @@ async function main() {
   }
   const rpc = new RpcClient(httpHandler);
 
+  const minBalanceMotes =
+    INSTALL_PAYMENT_MOTES * 2 + CALL_PAYMENT_MOTES * 3;
+  let balanceMotes = 0n;
+  try {
+    const balanceResult = await rpc.queryLatestBalance(
+      sdk.PurseIdentifier.fromPublicKey(publicKey)
+    );
+    balanceMotes = BigInt(balanceResult?.balance?.value ?? 0);
+  } catch (err) {
+    log("warn", "Could not preflight account balance; continuing deploy", {
+      error: String(err?.message ?? err),
+    });
+  }
   log("info", "Deploy starting", {
     network: NETWORK,
     node: NODE_RPC_URL,
     owner: ownerAccountHashStr,
+    installPaymentMotes: INSTALL_PAYMENT_MOTES,
+    installGasPriceTolerance: INSTALL_GAS_PRICE_TOLERANCE,
+    balanceMotes: balanceMotes.toString(),
+    minBalanceMotes: String(minBalanceMotes),
   });
+  if (balanceMotes > 0n && balanceMotes < BigInt(minBalanceMotes)) {
+    fail(
+      "Deploy account balance too low for two contract installs plus seed calls. " +
+        "Fund via https://testnet.cspr.live/tools/faucet",
+      {
+        balanceMotes: balanceMotes.toString(),
+        minBalanceMotes: String(minBalanceMotes),
+      }
+    );
+  }
 
   // 1+2. Install vault and registry.
   const vault = await installContract({
@@ -250,10 +324,13 @@ async function installContract({
 
   // Standard Odra 2.x install args: the cfg keys control the package-hash named
   // key, key override, and upgradability; `owner` is the contract constructor arg.
+  // `odra_cfg_is_upgrade` is required — without it Odra reverts with User error
+  // 64658 (MissingArg = 122, encoded as 64536 + 122).
   const args = Args.fromMap({
     odra_cfg_package_hash_key_name: CLValue.newCLString(packageKeyName),
     odra_cfg_allow_key_override: CLValue.newCLValueBool(true),
     odra_cfg_is_upgradable: CLValue.newCLValueBool(true),
+    odra_cfg_is_upgrade: CLValue.newCLValueBool(false),
     owner: CLValue.newCLKey(ownerKey),
   });
 
@@ -263,7 +340,7 @@ async function installContract({
     .installOrUpgrade()
     .runtimeArgs(args)
     .chainName(NETWORK)
-    .payment(INSTALL_PAYMENT_MOTES)
+    .payment(INSTALL_PAYMENT_MOTES, INSTALL_GAS_PRICE_TOLERANCE)
     .build();
 
   tx.sign(privateKey);
@@ -302,11 +379,12 @@ async function callContract({
   log("info", `Building call tx: ${label}`, { entryPoint, contractHash });
   const tx = new ContractCallBuilder()
     .from(publicKey)
-    .byHash(stripPrefix(contractHash))
+    .byPackageHash(stripPrefix(contractHash))
     .entryPoint(entryPoint)
     .runtimeArgs(args)
     .chainName(NETWORK)
     .payment(CALL_PAYMENT_MOTES)
+    .ttl(TX_TTL_MS)
     .build();
 
   tx.sign(privateKey);
@@ -324,33 +402,74 @@ async function callContract({
 
 async function waitForSuccess(sdk, rpc, tx, label) {
   const result = await rpc.waitForTransaction(tx, EXEC_TIMEOUT_MS);
-  const errorMessage = result?.executionInfo?.executionResult?.errorMessage;
+  const execResult = result?.executionInfo?.executionResult;
+  const errorMessage = execResult?.errorMessage;
+  const status = execResult?.status;
   if (errorMessage) {
-    fail(`On-chain execution failed for ${label}`, { errorMessage });
+    fail(`On-chain execution failed for ${label}`, { errorMessage, status });
+  }
+  if (status && String(status).toLowerCase().includes("failure")) {
+    fail(`On-chain execution failed for ${label}`, {
+      status,
+      errorMessage: errorMessage ?? null,
+    });
   }
   return result;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * After an Odra install, the contract package hash is stored under
- * `<packageKeyName>` in the deployer's named keys. Read it via the entity RPC.
+ * `<packageKeyName>` in the deployer's named keys. State can lag briefly after
+ * finalization, so we poll entity/account views for a short window.
  */
 async function readPackageHash(sdk, rpc, publicKey, packageKeyName, label) {
-  const { EntityIdentifier } = sdk;
-  const entityResult = await rpc.getLatestEntity(
-    EntityIdentifier.fromPublicKey(publicKey)
-  );
-  const namedKeys =
-    entityResult?.entity?.addressableEntity?.namedKeys ??
-    entityResult?.entity?.legacyAccount?.namedKeys ??
-    [];
-  const found = namedKeys.find((nk) => nk.name === packageKeyName);
-  if (!found) {
-    fail(`Could not find named key ${packageKeyName} for ${label}`, {
-      available: namedKeys.map((nk) => nk.name),
-    });
+  const { EntityIdentifier, AccountIdentifier } = sdk;
+  const deadline = Date.now() + 30_000;
+
+  while (Date.now() < deadline) {
+    const entityResult = await rpc.getLatestEntity(
+      EntityIdentifier.fromPublicKey(publicKey)
+    );
+    const entityNamedKeys =
+      entityResult?.entity?.addressableEntity?.namedKeys ??
+      entityResult?.entity?.legacyAccount?.namedKeys ??
+      [];
+    const fromEntity = entityNamedKeys.find((nk) => nk.name === packageKeyName);
+    if (fromEntity) {
+      return fromEntity.key.toPrefixedString();
+    }
+
+    try {
+      const accountInfo = await rpc.getAccountInfo(
+        null,
+        new AccountIdentifier(undefined, publicKey)
+      );
+      const accountNamedKeys =
+        accountInfo?.account?.namedKeys ??
+        accountInfo?.accountInfo?.namedKeys ??
+        [];
+      const fromAccount = accountNamedKeys.find(
+        (nk) => nk.name === packageKeyName
+      );
+      if (fromAccount) {
+        return fromAccount.key.toPrefixedString();
+      }
+    } catch {
+      // Account-info RPC may be unavailable on some nodes; entity poll is primary.
+    }
+
+    await sleep(2_000);
   }
-  return found.key.toPrefixedString();
+
+  fail(`Could not find named key ${packageKeyName} for ${label}`, {
+    hint:
+      "Install may have failed (e.g. out of gas) or payment was too low. " +
+      "Try raising INSTALL_PAYMENT_MOTES and fund the deploy account.",
+  });
 }
 
 function stripPrefix(hash) {
