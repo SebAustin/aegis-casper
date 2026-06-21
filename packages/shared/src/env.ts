@@ -53,7 +53,10 @@ const envSchema = z.object({
   X402_FACILITATOR_URL: z.string().optional(),
 
   // Agent loop
-  AGENT_LOOP_INTERVAL_MS: z.coerce.number().int().min(1000).default(30_000),
+  // Default 15 min keeps an online run (~2 reads/iteration) under the
+  // CSPR.cloud free-tier daily quota (~1200/day). Offline demo auto-uses a
+  // faster cadence (see resolveLoopIntervalMs). Set 30000 for a live online demo.
+  AGENT_LOOP_INTERVAL_MS: z.coerce.number().int().min(1000).default(900_000),
   /** Localhost HTTP port for dashboard POST /api/trigger → agent /trigger. */
   AGENT_TRIGGER_PORT: z.coerce.number().int().min(1).default(4022),
   /**

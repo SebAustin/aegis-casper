@@ -16,6 +16,11 @@ import {
 import { CasperTxClient, MockTxClient } from "./clients/casper-tx-client.js";
 import { createLlmClient, MockLlmClient } from "./clients/llm-client.js";
 import { startTriggerServer } from "./trigger-server.js";
+import {
+  resolveLoopIntervalMs,
+  isQuotaRiskyCadence,
+  QUOTA_RISKY_BELOW_MS,
+} from "./loop-interval.js";
 
 const env = loadEnv();
 const offlineDemo = env.AGENT_OFFLINE_DEMO;
@@ -143,12 +148,30 @@ const loop = new AgentLoop(
   { casperRead, oracle, llm, tx }
 );
 
+// Quota-safe cadence: online honours the configured interval (default 15 min,
+// ~192 reads/day, well under the cspr.cloud free-tier 1200/day cap); offline
+// demo runs lively since it makes no network calls.
+const loopIntervalMs = resolveLoopIntervalMs(
+  offlineDemo,
+  env.AGENT_LOOP_INTERVAL_MS
+);
+
+if (isQuotaRiskyCadence(offlineDemo, env.AGENT_LOOP_INTERVAL_MS)) {
+  process.stdout.write(
+    JSON.stringify({
+      level: "warn",
+      service: "agent",
+      msg: `AGENT_LOOP_INTERVAL_MS=${env.AGENT_LOOP_INTERVAL_MS} is below ${QUOTA_RISKY_BELOW_MS}ms for an ONLINE run — at ~2 reads/iteration this can exhaust the CSPR.cloud free-tier daily quota (1200/day) and cause HTTP 429. Use >= 900000 (15 min) for sustained online runs, or set AGENT_OFFLINE_DEMO=true.`,
+    }) + "\n"
+  );
+}
+
 process.stdout.write(
   JSON.stringify({
     level: "info",
     service: "agent",
     msg: "Agent starting",
-    interval_ms: env.AGENT_LOOP_INTERVAL_MS,
+    interval_ms: loopIntervalMs,
     env_file: getRepoDotEnvPath() ?? "none",
     account: agentAccountHash,
     llmProvider: offlineDemo ? "mock (offline demo)" : env.LLM_PROVIDER,
@@ -156,5 +179,5 @@ process.stdout.write(
   }) + "\n"
 );
 
-loop.start(env.AGENT_LOOP_INTERVAL_MS);
+loop.start(loopIntervalMs);
 startTriggerServer(loop, env.AGENT_TRIGGER_PORT);

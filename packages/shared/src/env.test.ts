@@ -12,7 +12,7 @@ describe("loadEnv", () => {
     expect(env.LLM_PROVIDER).toBe("anthropic");
     expect(env.ORACLE_PORT).toBe(4021);
     expect(env.ORACLE_PRICE_MOTES).toBe(BigInt(1_000_000));
-    expect(env.AGENT_LOOP_INTERVAL_MS).toBe(30_000);
+    expect(env.AGENT_LOOP_INTERVAL_MS).toBe(900_000);
   });
 
   it("parses numeric strings correctly", () => {
