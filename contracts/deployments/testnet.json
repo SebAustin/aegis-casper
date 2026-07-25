@@ -1,8 +1,8 @@
 {
-  "vault_contract_hash": "hash-efec07b9288855ba750e3401e68b111a8a019b3052716f9e3059808d26932d31",
-  "vault_deploy_hash": "019c30977ab6fa082d78565c45df6a210ba7400d82c2073af34f7f4e148a4769",
-  "registry_contract_hash": "hash-e1523b014cebc6baa1e4494423e53ae3794ccd790bf7c656df292dde19d865fe",
-  "registry_deploy_hash": "a20329862d2e7a7a82f560b834b5a09da0c076844dd325ea8a9d608b78249e2d",
+  "vault_contract_hash": "hash-b97706ec6dc5d395a395d6d4a37c449c2421871d40e35acebb3c733ba890ac69",
+  "vault_deploy_hash": "1ff7a526a91af134c14d4b42d09719e834ee2009566ad9a34c0f829e0ba0cdb9",
+  "registry_contract_hash": "hash-7c93ab751f874234e1e2048b495b8dc26e81ab5c60621bb771139e988bc6f41f",
+  "registry_deploy_hash": "3b7039a96f09e86d5ee46b4079cc16762e659e9d5372dce39b1814365428f8f5",
   "network": "casper-test",
-  "deployed_at": "2026-06-21T14:31:33.446Z"
+  "deployed_at": "2026-07-25T13:30:54.388Z"
 }
