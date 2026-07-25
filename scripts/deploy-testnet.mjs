@@ -82,6 +82,10 @@ function fail(msg, extra = {}) {
 // ── Config / guardrails ─────────────────────────────────────────────────────
 
 const ALLOW = process.env.ALLOW_TESTNET_DEPLOY === "true";
+// REGISTER_ONLY: skip the (expensive) contract installs and only run
+// register_agent + seed update_reputation against the ALREADY-deployed registry
+// (hash from REGISTRY_CONTRACT_HASH / testnet.json). Costs ~2 entry-point calls.
+const REGISTER_ONLY = process.env.REGISTER_ONLY === "true";
 const PRIVATE_KEY_HEX = process.env.AGENT_PRIVATE_KEY_HEX ?? "";
 const NETWORK = process.env.CASPER_NETWORK ?? "casper-test";
 const NODE_RPC_URL =
@@ -153,7 +157,7 @@ async function main() {
         "Ensure repo-root .env contains a 64-char hex key (not a .pem path)."
     );
   }
-  if (!VAULT_WASM || !REGISTRY_WASM) {
+  if (!REGISTER_ONLY && (!VAULT_WASM || !REGISTRY_WASM)) {
     fail(
       "Compiled wasm not found. Run `cd contracts && cargo odra build` first.",
       { vaultWasm: VAULT_WASM, registryWasm: REGISTRY_WASM }
@@ -199,8 +203,9 @@ async function main() {
   }
   const rpc = new RpcClient(httpHandler);
 
-  const minBalanceMotes =
-    INSTALL_PAYMENT_MOTES * 2 + CALL_PAYMENT_MOTES * 3;
+  const minBalanceMotes = REGISTER_ONLY
+    ? CALL_PAYMENT_MOTES * 2
+    : INSTALL_PAYMENT_MOTES * 2 + CALL_PAYMENT_MOTES * 3;
   let balanceMotes = 0n;
   try {
     const balanceResult = await rpc.queryLatestBalance(
@@ -232,40 +237,64 @@ async function main() {
     );
   }
 
-  // 1+2. Install vault and registry.
-  const vault = await installContract({
-    sdk,
-    rpc,
-    privateKey,
-    publicKey,
-    wasmPath: VAULT_WASM,
-    packageKeyName: "vault_package_hash",
-    ownerKey: Key.newKey(ownerAccountHashStr),
-    label: "vault",
-  });
-  const registry = await installContract({
-    sdk,
-    rpc,
-    privateKey,
-    publicKey,
-    wasmPath: REGISTRY_WASM,
-    packageKeyName: "registry_package_hash",
-    ownerKey: Key.newKey(ownerAccountHashStr),
-    label: "registry",
-  });
+  let registryContractHash;
 
-  // 3+4. Persist deployment metadata.
-  const deployment = {
-    vault_contract_hash: vault.contractHash,
-    vault_deploy_hash: vault.txHash,
-    registry_contract_hash: registry.contractHash,
-    registry_deploy_hash: registry.txHash,
-    network: NETWORK,
-    deployed_at: new Date().toISOString(),
-  };
-  await mkdir(path.dirname(DEPLOYMENTS_PATH), { recursive: true });
-  await writeFile(DEPLOYMENTS_PATH, JSON.stringify(deployment, null, 2) + "\n");
-  log("info", "Wrote deployment metadata", { path: DEPLOYMENTS_PATH });
+  if (REGISTER_ONLY) {
+    // Reuse the already-deployed registry — no installs.
+    registryContractHash =
+      process.env.REGISTRY_CONTRACT_HASH ||
+      (existsSync(DEPLOYMENTS_PATH)
+        ? JSON.parse(readFileSync(DEPLOYMENTS_PATH, "utf8"))
+            .registry_contract_hash
+        : "");
+    if (!registryContractHash) {
+      fail(
+        "REGISTER_ONLY=true but no registry hash found in REGISTRY_CONTRACT_HASH or testnet.json"
+      );
+    }
+    log("info", "REGISTER_ONLY — registering agent on existing registry", {
+      registry: registryContractHash,
+    });
+  } else {
+    // 1+2. Install vault and registry.
+    const vault = await installContract({
+      sdk,
+      rpc,
+      privateKey,
+      publicKey,
+      wasmPath: VAULT_WASM,
+      packageKeyName: "vault_package_hash",
+      ownerKey: Key.newKey(ownerAccountHashStr),
+      label: "vault",
+    });
+    const registry = await installContract({
+      sdk,
+      rpc,
+      privateKey,
+      publicKey,
+      wasmPath: REGISTRY_WASM,
+      packageKeyName: "registry_package_hash",
+      ownerKey: Key.newKey(ownerAccountHashStr),
+      label: "registry",
+    });
+    registryContractHash = registry.contractHash;
+
+    // 3+4. Persist deployment metadata.
+    const deployment = {
+      vault_contract_hash: vault.contractHash,
+      vault_deploy_hash: vault.txHash,
+      registry_contract_hash: registry.contractHash,
+      registry_deploy_hash: registry.txHash,
+      network: NETWORK,
+      deployed_at: new Date().toISOString(),
+    };
+    await mkdir(path.dirname(DEPLOYMENTS_PATH), { recursive: true });
+    await writeFile(
+      DEPLOYMENTS_PATH,
+      JSON.stringify(deployment, null, 2) + "\n"
+    );
+    log("info", "Wrote deployment metadata", { path: DEPLOYMENTS_PATH });
+  }
 
   // 5. Seed reputation (A-018): register, then a positive update so the seed is
   // itself an auditable on-chain reputation transaction.
@@ -276,7 +305,7 @@ async function main() {
     rpc,
     privateKey,
     publicKey,
-    contractHash: registry.contractHash,
+    contractHash: registryContractHash,
     entryPoint: "register_agent",
     args: Args.fromMap({ agent: CLValue.newCLKey(agentKey) }),
     label: "register_agent",
@@ -288,7 +317,7 @@ async function main() {
     rpc,
     privateKey,
     publicKey,
-    contractHash: registry.contractHash,
+    contractHash: registryContractHash,
     entryPoint: "update_reputation",
     args: Args.fromMap({
       agent: CLValue.newCLKey(agentKey),
@@ -298,9 +327,8 @@ async function main() {
     label: "update_reputation(seed)",
   });
 
-  log("info", "Deploy + seed complete", {
-    vault: vault.contractHash,
-    registry: registry.contractHash,
+  log("info", REGISTER_ONLY ? "Register + seed complete" : "Deploy + seed complete", {
+    registry: registryContractHash,
     seedScore: SEED_SCORE,
   });
 }
