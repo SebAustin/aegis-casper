@@ -2,7 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { usePoller } from "@/hooks/usePoller";
-import type { VaultState, AgentReputation, DecisionLogEntry, RwaOracleData } from "@aegis/shared";
+import type {
+  VaultState,
+  AgentReputation,
+  DecisionLogEntry,
+  RwaOracleData,
+  AllocationMap,
+} from "@aegis/shared";
 import {
   getMockVaultOverlay,
   isMockWalletMode,
@@ -111,6 +117,23 @@ export function CockpitGrid() {
   const vault = usePoller(fetchVault, slowPollOptions);
   const [overlayTick, setOverlayTick] = useState(0);
   const [localDecisions, setLocalDecisions] = useState<DecisionLogEntry[]>([]);
+  // Demo-mode: each simulated agent run nudges the allocation pie, vault
+  // balance (simulated yield), and reputation so the cockpit visibly reacts.
+  // Deltas stay at zero unless a demo trigger fires, so the real-agent path is
+  // unaffected.
+  const [demoOverride, setDemoOverride] = useState<{
+    allocation: AllocationMap | null;
+    scoreDelta: bigint;
+    decisionsDelta: bigint;
+    correctDelta: bigint;
+    balanceDeltaMotes: bigint;
+  }>({
+    allocation: null,
+    scoreDelta: 0n,
+    decisionsDelta: 0n,
+    correctDelta: 0n,
+    balanceDeltaMotes: 0n,
+  });
 
   useEffect(() => {
     if (!isMockWalletMode()) return;
@@ -149,6 +172,24 @@ export function CockpitGrid() {
               !(e.iteration === newDecision.iteration && e.timestamp === newDecision.timestamp)
           ),
         ]);
+
+        // Demo mode: reflect the run in the vault / allocation / reputation
+        // panels so the whole cockpit moves, not just the feed.
+        if (detail.demo) {
+          const dec = newDecision;
+          setDemoOverride((prev) => ({
+            allocation:
+              dec.acted && dec.recommendedAllocation?.length
+                ? dec.recommendedAllocation
+                : prev.allocation,
+            scoreDelta: prev.scoreDelta + (dec.acted ? 1n : 0n),
+            decisionsDelta: prev.decisionsDelta + 1n,
+            correctDelta: prev.correctDelta + (dec.confidence >= 70 ? 1n : 0n),
+            // ~2.5 CSPR simulated yield credited on each acted run.
+            balanceDeltaMotes:
+              prev.balanceDeltaMotes + (dec.acted ? 2_500_000_000n : 0n),
+          }));
+        }
       }
 
       void decisions.refetch();
@@ -174,11 +215,30 @@ export function CockpitGrid() {
 
   const countdown = vault.countdown;
 
+  // Apply demo-run deltas (all zero unless a demo trigger fired).
+  const vaultDataWithDemo: VaultState | null = vaultData
+    ? {
+        ...vaultData,
+        totalBalanceMotes: vaultData.totalBalanceMotes + demoOverride.balanceDeltaMotes,
+        allocation: demoOverride.allocation ?? vaultData.allocation,
+      }
+    : vaultData;
+
+  const baseRep = reputation.data?.reputation ?? null;
+  const reputationData: AgentReputation | null = baseRep
+    ? {
+        ...baseRep,
+        score: baseRep.score + demoOverride.scoreDelta,
+        totalDecisions: baseRep.totalDecisions + demoOverride.decisionsDelta,
+        correctPredictions: baseRep.correctPredictions + demoOverride.correctDelta,
+      }
+    : baseRep;
+
   return (
     <div className="cockpit-grid">
       <div style={{ gridColumn: "span 5" }} className="cockpit-vault">
         <VaultOverviewPanel
-          data={vaultData}
+          data={vaultDataWithDemo}
           status={vault.status}
           error={vault.error}
           lastUpdatedMs={vault.lastUpdatedMs}
@@ -188,7 +248,7 @@ export function CockpitGrid() {
 
       <div style={{ gridColumn: "span 4" }} className="cockpit-alloc">
         <AllocationChartPanel
-          allocation={vaultData?.allocation ?? null}
+          allocation={vaultDataWithDemo?.allocation ?? null}
           oracleAssets={oracle.data?.data?.assets ?? null}
           status={vault.status}
         />
@@ -196,7 +256,7 @@ export function CockpitGrid() {
 
       <div style={{ gridColumn: "span 3" }} className="cockpit-rep">
         <ReputationPanel
-          data={reputation.data?.reputation ?? null}
+          data={reputationData}
           status={reputation.status}
           error={reputation.error}
           dataWarning={reputation.data?.dataWarning}
