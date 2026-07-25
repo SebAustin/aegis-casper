@@ -1,0 +1,15 @@
+<svg viewBox="0 0 480 480" xmlns="http://www.w3.org/2000/svg" font-family="'Space Grotesk','Segoe UI',system-ui,sans-serif">
+  <rect x="0" y="0" width="480" height="480" rx="96" fill="#0a0e14"/>
+  <rect x="8" y="8" width="464" height="464" rx="90" fill="none" stroke="#1b2531" stroke-width="2"/>
+  <polygon points="240.00,58.00 359.51,127.00 359.51,265.00 240.00,334.00 120.49,265.00 120.49,127.00" fill="none" stroke="#22323f" stroke-width="3"/>
+  <polygon points="240.00,70.00 349.12,133.00 349.12,259.00 240.00,322.00 130.88,259.00 130.88,133.00" fill="none" stroke="#3fd0c0" stroke-width="1.5" opacity="0.4"/>
+  <path d="M 244.40,112.12 A 84 84 0 0 1 323.22,207.40 L 289.54,202.79 A 50 50 0 0 0 242.62,146.07 Z" fill="#f3b54a"/>
+  <path d="M 321.58,216.04 A 84 84 0 0 1 244.40,279.88 L 242.62,245.93 A 50 50 0 0 0 288.56,207.93 Z" fill="#3fd0c0"/>
+  <path d="M 235.60,279.88 A 84 84 0 0 1 178.17,252.86 L 203.20,229.84 A 50 50 0 0 0 237.38,245.93 Z" fill="#e0834a"/>
+  <path d="M 172.56,246.08 A 84 84 0 0 1 166.82,154.76 L 196.44,171.45 A 50 50 0 0 0 199.86,225.81 Z" fill="#5fd08a"/>
+  <path d="M 171.53,147.34 A 84 84 0 0 1 235.60,112.12 L 237.38,146.07 A 50 50 0 0 0 199.24,167.04 Z" fill="#9b8cf0"/>
+  <circle cx="240" cy="196" r="34" fill="#0a0e14"/>
+  <text x="240" y="209" fill="#f3b54a" font-size="40" font-weight="700" text-anchor="middle">Æ</text>
+  <text x="240" y="392" fill="#eef3f9" font-size="62" font-weight="700" letter-spacing="6" text-anchor="middle">AEGIS</text>
+  <text x="240" y="428" fill="#8ea1b6" font-size="18" letter-spacing="5" text-anchor="middle" font-family="'JetBrains Mono',monospace">RWA YIELD AGENT · CASPER</text>
+</svg>
