@@ -15,3 +15,9 @@ packages/*/.next/
 .env.*.local
 .cursor/
 **/.cursor/
+.vercel/
+**/.vercel/
+
+# video pipeline intermediates (scene SVGs/PNGs, re-encoded assets) — keep only
+# the final docs/brand/aegis-demo.mp4 deliverable in git.
+docs/brand/video_build/

@@ -24,7 +24,13 @@ A self-driving portfolio manager for tokenized real-world-asset yield — an aut
 
 ---
 
-## Vision — the problem this project solves
+## Vision — the problem this project solves (≤256 chars for the form)
+```
+Aegis is an autonomous AI agent for tokenized real-world-asset (RWA) yield on Casper. It pays for data via x402, reasons with an LLM, signs its own on-chain reallocations, and earns a verifiable on-chain reputation for every decision it makes.
+```
+(243 characters — fits the 256 limit.)
+
+### Longer vision (for a description/details field if present)
 ```
 Tokenized real-world assets (T-bills, private credit, commodities, liquid staking) now exceed $19B on-chain, but their yields shift constantly and rebalancing is manual, slow, and needs 24/7 oversight. Treasuries and individual investors either overpay for active managers or leave capital idle in a suboptimal allocation.
 
@@ -59,19 +65,19 @@ Public, open-source, MIT. Includes contracts, agent, MCP server, x402 oracle, Ne
 
 ---
 
-## Project website (optional)
+## Project website
 ```
-(none yet)
+https://dashboard-zeta-three-71.vercel.app
 ```
-Optional and currently unset. The Next.js dashboard can be deployed to a public URL (e.g. Vercel) in ~1 step if a live site is wanted — ask and it can be stood up.
+Live Vercel deploy of the Aegis cockpit dashboard (public/demo mode — no secrets, mock wallet, demo-fallback data, links to the July testnet contracts on cspr.live). Verified HTTP 200; all panels + API routes render.
 
 ---
 
 ## Demo video (YouTube)
 ```
-(pending — to record)
+Upload docs/brand/aegis-demo.mp4 to YouTube, then paste the watch URL here.
 ```
-Not yet recorded. A full shot-by-shot script exists at `docs/DEMO.md` (8 beats: wallet connect → deposit → agent loop → x402 oracle call → on-chain reallocation → reputation update → cspr.live confirmation → MCP inspector). Record with `AGENT_OFFLINE_DEMO=true` for a self-contained run, or against the live July testnet contracts.
+A ready-to-upload **64s 1080p trailer** is at `docs/brand/aegis-demo.mp4` (H.264, 5.4 MB): logo → the $19B RWA problem → the perceive→decide→act loop → architecture (Odra·MCP·x402·CSPR.cloud) → proof (live on testnet, 30+ on-chain decisions, 213 tests, 0 HIGH) → repo close. It's a motion-graphics trailer, not a live-app walkthrough — for a full app walkthrough, the shot-by-shot script is in `docs/DEMO.md` (record with `AGENT_OFFLINE_DEMO=true`, no keys needed).
 
 ---
 
