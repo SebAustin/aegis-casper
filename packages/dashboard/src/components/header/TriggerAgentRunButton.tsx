@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { DecisionLogEntry } from "@aegis/shared";
 import { dispatchAgentTrigger } from "@/lib/trigger-events";
+import { isDemoMode } from "@/lib/demo-mode";
 import { formatCountdown } from "@/lib/format";
 
 type TriggerState = "idle" | "loading" | "success" | "error";
@@ -68,6 +69,10 @@ export function TriggerAgentRunButton() {
   const inCooldown = agentStatus?.inRpcCooldown === true && cooldownMs > 0;
   const agentUnreachable = agentStatus?.reachable === false;
   const agentBusy = agentStatus?.iterationRunning === true;
+  // In demo mode the button drives a self-contained simulated run, so a missing
+  // live agent must NOT disable it (there is no agent process on a hosted deploy).
+  const demoMode = isDemoMode();
+  const blockUnreachable = agentUnreachable && !demoMode;
 
   const showToast = (message: string, ms = 5000) => {
     setToast(message);
@@ -166,17 +171,21 @@ export function TriggerAgentRunButton() {
       ? `Cooldown ${formatCountdown(cooldownMs)}`
       : agentBusy
       ? "Agent busy…"
-      : agentUnreachable
+      : blockUnreachable
       ? "Agent offline"
+      : demoMode
+      ? "Run Demo Agent"
       : "Trigger Agent Run";
 
   const triggerDisabled =
-    state === "loading" || inCooldown || agentBusy || agentUnreachable;
+    state === "loading" || inCooldown || agentBusy || blockUnreachable;
 
   const helperTitle = inCooldown
     ? `RPC cooldown — on-chain reads were rate-limited. Retry in ${formatCountdown(cooldownMs)}.`
-    : agentUnreachable
+    : blockUnreachable
     ? "Start the agent with `pnpm agent` (after `pnpm oracle`)."
+    : demoMode
+    ? "Runs a simulated agent decision — no live agent required (demo mode)."
     : agentBusy
     ? "Waiting for the current iteration to finish."
     : state === "error"
