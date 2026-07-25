@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import type { DecisionLogEntry } from "@aegis/shared";
 import { dispatchAgentTrigger } from "@/lib/trigger-events";
 import { formatCountdown } from "@/lib/format";
 
@@ -84,6 +85,8 @@ export function TriggerAgentRunButton() {
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
         cooldownRemainingMs?: number;
+        demo?: boolean;
+        decision?: DecisionLogEntry;
       };
 
       if (res.status === 503) {
@@ -114,9 +117,11 @@ export function TriggerAgentRunButton() {
       }
 
       setState("success");
-      dispatchAgentTrigger();
+      dispatchAgentTrigger({ decision: body.decision, demo: body.demo });
       showToast(
-        "Agent run started — check Decision Feed for the new entry.",
+        body.demo
+          ? "Demo run complete — simulated decision added to the feed below."
+          : "Agent run started — check Decision Feed for the new entry.",
         6000
       );
 

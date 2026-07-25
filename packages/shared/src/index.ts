@@ -15,4 +15,5 @@ export * from "./casper-rpc-retry.js";
 export * from "./repo-paths.js";
 export * from "./decision-log.js";
 export * from "./demo-oracle.js";
+export * from "./demo-decision.js";
 export * from "./jsonl.js";

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { TriggerAgentRunButton } from "./TriggerAgentRunButton";
+import { DemoModeBadge } from "./DemoModeBadge";
 import { WalletConnectButton } from "../wallet/WalletConnectButton";
 import { AegisLogo } from "./AegisLogo";
 
@@ -65,6 +66,7 @@ export function Header({ nonce: _ }: HeaderProps) {
           gap: "var(--space-3)",
         }}
       >
+        <DemoModeBadge />
         <TriggerAgentRunButton />
         <WalletConnectButton />
       </nav>

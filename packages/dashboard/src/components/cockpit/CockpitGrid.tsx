@@ -8,7 +8,7 @@ import {
   isMockWalletMode,
   MOCK_VAULT_OVERLAY_EVENT,
 } from "@/lib/mock-vault-overlay";
-import { AEGIS_AGENT_TRIGGER_EVENT } from "@/lib/trigger-events";
+import { AEGIS_AGENT_TRIGGER_EVENT, type AgentTriggerEventDetail } from "@/lib/trigger-events";
 import { VaultOverviewPanel } from "./VaultOverviewPanel";
 import { AllocationChartPanel } from "./AllocationChartPanel";
 import { ReputationPanel } from "./ReputationPanel";
@@ -110,6 +110,7 @@ const slowPollOptions = { intervalMs: SLOW_POLL_MS, skipOverlapping: true };
 export function CockpitGrid() {
   const vault = usePoller(fetchVault, slowPollOptions);
   const [overlayTick, setOverlayTick] = useState(0);
+  const [localDecisions, setLocalDecisions] = useState<DecisionLogEntry[]>([]);
 
   useEffect(() => {
     if (!isMockWalletMode()) return;
@@ -135,7 +136,21 @@ export function CockpitGrid() {
   const oracle = usePoller(fetchOracle);
 
   useEffect(() => {
-    const refresh = () => {
+    const refresh = (event: Event) => {
+      const detail = (event as CustomEvent<AgentTriggerEventDetail>).detail;
+      if (detail?.decision) {
+        // Prepend immediately so the click visibly adds a new entry to the
+        // feed without waiting on a poll (demo mode has no log to poll).
+        const newDecision = detail.decision;
+        setLocalDecisions((prev) => [
+          newDecision,
+          ...prev.filter(
+            (e) =>
+              !(e.iteration === newDecision.iteration && e.timestamp === newDecision.timestamp)
+          ),
+        ]);
+      }
+
       void decisions.refetch();
       void vault.refetch();
       void reputation.refetch();
@@ -148,6 +163,14 @@ export function CockpitGrid() {
     window.addEventListener(AEGIS_AGENT_TRIGGER_EVENT, refresh);
     return () => window.removeEventListener(AEGIS_AGENT_TRIGGER_EVENT, refresh);
   }, [decisions.refetch, vault.refetch, reputation.refetch, oracle.refetch]);
+
+  const mergedDecisions: DecisionLogEntry[] | null = (() => {
+    const polled = decisions.data;
+    if (localDecisions.length === 0) return polled;
+    const polledKeys = new Set((polled ?? []).map((e) => `${e.iteration}-${e.timestamp}`));
+    const extra = localDecisions.filter((e) => !polledKeys.has(`${e.iteration}-${e.timestamp}`));
+    return [...extra, ...(polled ?? [])];
+  })();
 
   const countdown = vault.countdown;
 
@@ -182,7 +205,7 @@ export function CockpitGrid() {
 
       <div style={{ gridColumn: "span 7" }} className="cockpit-feed">
         <DecisionFeedPanel
-          entries={decisions.data}
+          entries={mergedDecisions}
           status={decisions.status}
           error={decisions.error}
           countdown={countdown}

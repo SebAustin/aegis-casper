@@ -1,19 +1,30 @@
 import { NextResponse } from "next/server";
 import { readFileSync, existsSync } from "fs";
 import type { DecisionLogEntry } from "@aegis/shared";
-import { parseDecisionLogLine, resolveRepoLogPath } from "@aegis/shared";
+import {
+  buildDemoDecisionFeed,
+  parseDecisionLogLine,
+  resolveRepoLogPath,
+} from "@aegis/shared";
+import { isDemoMode } from "@/lib/demo-mode";
 
 /**
  * GET /api/decisions
  *
  * Reads the last 20 entries from logs/decisions.jsonl (FR-D-03).
  * Legacy rows are coerced via normalizeDecisionLogEntry before display.
+ *
+ * On a hosted (serverless) deploy there is no running agent and no log
+ * file — when `NEXT_PUBLIC_DEMO_MODE=true` and the log is missing/empty, a
+ * seeded demo feed is returned instead so the dashboard is never blank.
  */
 export async function GET(): Promise<NextResponse> {
   const logsPath = resolveRepoLogPath("decisions.jsonl");
+  const demoMode = isDemoMode();
 
   if (!existsSync(logsPath)) {
-    return NextResponse.json<DecisionLogEntry[]>([], {
+    const entries = demoMode ? buildDemoDecisionFeed() : [];
+    return NextResponse.json<DecisionLogEntry[]>(entries, {
       headers: { "Cache-Control": "no-store" },
     });
   }
@@ -44,6 +55,12 @@ export async function GET(): Promise<NextResponse> {
     }
 
     entries.reverse();
+
+    if (entries.length === 0 && demoMode) {
+      return NextResponse.json(buildDemoDecisionFeed(), {
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
 
     return NextResponse.json(entries, {
       headers: { "Cache-Control": "no-store" },
