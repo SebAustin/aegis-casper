@@ -3,6 +3,7 @@
 import type { RwaOracleData } from "@aegis/shared";
 import type { PollStatus } from "@/hooks/usePoller";
 import { formatApyBps, relativeTime } from "@/lib/format";
+import { isDemoMode } from "@/lib/demo-mode";
 import { StatusChip } from "@/components/ui/StatusChip";
 import { TxHashChip } from "@/components/ui/TxHashChip";
 import { SkeletonBlock } from "@/components/ui/SkeletonBlock";
@@ -22,6 +23,7 @@ export function OraclePanel({ data, dataSource, status, error }: Props) {
   const isLoading = (status === "idle" || status === "loading") && !data;
   const isOfflineSource =
     dataSource === "demo" || dataSource === "payments-log";
+  const demoMode = isDemoMode();
 
   const freshness = data
     ? Date.now() - data.timestamp
@@ -63,21 +65,36 @@ export function OraclePanel({ data, dataSource, status, error }: Props) {
           role="status"
           style={{
             fontSize: "var(--text-xs)",
-            color: "var(--color-warning)",
+            color: demoMode ? "var(--color-accent-cyan)" : "var(--color-warning)",
             marginBottom: "var(--space-3)",
             padding: "var(--space-2) var(--space-3)",
             borderRadius: "var(--radius-sm)",
-            background: "var(--color-warning-10, rgba(234, 179, 8, 0.08))",
-            border: "1px solid var(--color-warning)",
+            background: demoMode
+              ? "var(--color-accent-cyan-10, rgba(34, 211, 238, 0.08))"
+              : "var(--color-warning-10, rgba(234, 179, 8, 0.08))",
+            border: `1px solid ${demoMode ? "var(--color-accent-cyan)" : "var(--color-warning)"}`,
             lineHeight: 1.45,
           }}
         >
-          Oracle service offline — showing{" "}
-          {dataSource === "payments-log" ? "cached payment" : "demo"} yields.
-          Run <code style={{ fontFamily: "var(--font-mono)" }}>pnpm oracle</code>{" "}
-          (port 4021), then refresh. Agent needs oracle before{" "}
-          <code style={{ fontFamily: "var(--font-mono)" }}>pnpm agent</code> for
-          live x402 data.
+          {demoMode ? (
+            <>
+              Demo yields — simulated RWA data served behind the x402 paywall.
+              The live oracle + agent run locally (
+              <code style={{ fontFamily: "var(--font-mono)" }}>pnpm oracle</code>{" "}
+              &amp;{" "}
+              <code style={{ fontFamily: "var(--font-mono)" }}>pnpm agent</code>).
+            </>
+          ) : (
+            <>
+              Oracle service offline — showing{" "}
+              {dataSource === "payments-log" ? "cached payment" : "demo"} yields.
+              Run{" "}
+              <code style={{ fontFamily: "var(--font-mono)" }}>pnpm oracle</code>{" "}
+              (port 4021), then refresh. Agent needs oracle before{" "}
+              <code style={{ fontFamily: "var(--font-mono)" }}>pnpm agent</code>{" "}
+              for live x402 data.
+            </>
+          )}
         </p>
       )}
 
